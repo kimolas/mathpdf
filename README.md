@@ -1,4 +1,4 @@
-# Math PDF Tablet Enhancer (100% Vibe-coded by Gemini 3 Pro)
+# Math PDF Enhancer for Tablets (100% Vibe-coded by Gemini 3 Pro)
 
 A client-side web application that processes PDFs to add wide margins for note-taking. It utilizes PDFium via WebAssembly (WASM) to modify PDF structures directly in the browser, ensuring user privacy by keeping all data local.
 
