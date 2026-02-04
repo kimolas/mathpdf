@@ -14,27 +14,77 @@
             border-color: #3b82f6;
             background-color: #eff6ff;
         }
+        /* Custom Range Slider Styling */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #2563eb;
+            cursor: pointer;
+            margin-top: -6px;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #e2e8f0;
+            border-radius: 2px;
+        }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen flex items-center justify-center p-4">
+<body class="bg-slate-50 min-h-screen flex items-center justify-center p-4 font-sans">
 
     <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md border border-slate-100">
-        <h1 class="text-2xl font-bold text-slate-800 mb-2">Textbook Margin Enhancer</h1>
+        <h1 class="text-2xl font-bold text-slate-800 mb-6">Textbook Margin Enhancer</h1>
         
-        <div class="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-6 text-xs text-slate-500">
-            <strong>Setup Requirement:</strong> Ensure <code>pdfium.js</code>, <code>pdfium.wasm</code>, and <code>worker.js</code> are in this same folder.
-        </div>
-
-        <div id="dropZone" class="drop-zone rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer mb-6">
-            <div id="fileIcon" class="mb-4 text-blue-500">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <!-- File Drop Zone -->
+        <div id="dropZone" class="drop-zone rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer mb-6 hover:bg-slate-50">
+            <div id="fileIcon" class="mb-3 text-blue-500 transition-transform duration-300">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
             </div>
-            <p id="fileName" class="text-sm font-medium text-slate-600 text-center">Click or drag PDF here</p>
+            <p id="fileName" class="text-sm font-medium text-slate-600 text-center truncate w-full px-4">Click or drag PDF here</p>
             <input type="file" id="fileInput" class="hidden" accept="application/pdf">
         </div>
 
+        <!-- Configuration Options -->
+        <div id="configSection" class="mb-8 space-y-5">
+            
+            <!-- Margin Size -->
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Extra Margin Size</label>
+                    <span id="marginValue" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">2.5 inches</span>
+                </div>
+                <input type="range" id="marginSlider" min="72" max="360" step="18" value="180" class="w-full appearance-none bg-transparent focus:outline-none">
+                <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                    <span>1"</span>
+                    <span>2.5"</span>
+                    <span>5"</span>
+                </div>
+            </div>
+
+            <!-- Margin Position -->
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Margin Position</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <button type="button" class="side-btn active ring-2 ring-blue-500 ring-offset-1 bg-blue-50 text-blue-700 border-blue-200 border rounded-lg py-2 text-xs font-medium transition-all" data-value="right">
+                        Right
+                    </button>
+                    <button type="button" class="side-btn bg-white text-slate-600 border-slate-200 border rounded-lg py-2 text-xs font-medium hover:bg-slate-50 transition-all" data-value="left">
+                        Left
+                    </button>
+                    <button type="button" class="side-btn bg-white text-slate-600 border-slate-200 border rounded-lg py-2 text-xs font-medium hover:bg-slate-50 transition-all" data-value="alternating">
+                        Outer
+                    </button>
+                </div>
+                <p id="sideDesc" class="text-[10px] text-slate-400 mt-1.5 h-3">Standard for single-sided printing.</p>
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
         <div id="progressContainer" class="hidden mb-6">
             <div class="flex justify-between text-xs text-slate-500 mb-1">
                 <span id="statusText">Processing...</span>
@@ -45,11 +95,13 @@
             </div>
         </div>
 
-        <button id="enhanceBtn" disabled class="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors shadow-lg shadow-blue-200 flex items-center justify-center">
+        <!-- Action Button -->
+        <button id="enhanceBtn" disabled class="w-full py-3.5 px-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-slate-200 flex items-center justify-center transform active:scale-[0.98]">
             <span>Enhance PDF</span>
         </button>
 
-        <div id="log" class="mt-6 font-mono text-[10px] text-slate-400 overflow-y-auto max-h-32 border-t pt-4">
+        <!-- Log Area -->
+        <div id="log" class="mt-6 font-mono text-[10px] text-slate-400 overflow-y-auto max-h-24 border-t pt-4">
             > Initializing Worker...
         </div>
     </div>
@@ -64,10 +116,23 @@
         const progressBar = document.getElementById('progressBar');
         const percentText = document.getElementById('percentText');
         const statusText = document.getElementById('statusText');
+        
+        // Config Elements
+        const marginSlider = document.getElementById('marginSlider');
+        const marginValue = document.getElementById('marginValue');
+        const sideBtns = document.querySelectorAll('.side-btn');
+        const sideDesc = document.getElementById('sideDesc');
 
         let selectedFile = null;
         let worker = null;
         let isEngineReady = false;
+        let currentSide = 'right';
+
+        const sideDescriptions = {
+            'right': 'Standard for digital reading or single-sided print.',
+            'left': 'Adds space on the left side of every page.',
+            'alternating': 'Outer margins (Right on odd, Left on even).'
+        };
 
         function addLog(msg, isError = false) {
             const div = document.createElement('div');
@@ -77,10 +142,33 @@
             log.scrollTop = log.scrollHeight;
         }
 
-        // Initialize Worker
+        // --- Config Logic ---
+        marginSlider.oninput = (e) => {
+            const pts = parseInt(e.target.value);
+            const inches = (pts / 72).toFixed(1);
+            marginValue.textContent = `${inches} inches`;
+        };
+
+        sideBtns.forEach(btn => {
+            btn.onclick = () => {
+                // Reset styles
+                sideBtns.forEach(b => {
+                    b.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-1', 'bg-blue-50', 'text-blue-700');
+                    b.classList.add('bg-white', 'text-slate-600');
+                });
+                // Set active style
+                btn.classList.remove('bg-white', 'text-slate-600');
+                btn.classList.add('ring-2', 'ring-blue-500', 'ring-offset-1', 'bg-blue-50', 'text-blue-700');
+                
+                currentSide = btn.dataset.value;
+                sideDesc.textContent = sideDescriptions[currentSide];
+            };
+        });
+
+        // --- Worker Logic ---
         function initWorker() {
             try {
-                if (worker) return; // Already initialized
+                if (worker) return;
                 
                 worker = new Worker('worker.js');
                 
@@ -89,11 +177,11 @@
                     
                     if (type === 'READY') {
                         isEngineReady = true;
-                        addLog('PDFium Engine Online.');
+                        addLog('Engine Online.');
                         if (selectedFile) enhanceBtn.disabled = false;
                     } 
                     else if (type === 'COMPLETE') {
-                        addLog('Processing complete!');
+                        addLog('Complete.');
                         downloadFile(data, `enhanced_${selectedFile.name}`);
                         resetUI();
                     } 
@@ -101,11 +189,6 @@
                         addLog(`ERROR: ${data}`, true);
                         resetUI();
                     }
-                };
-                
-                worker.onerror = (err) => {
-                    addLog('Worker Error. Check console.', true);
-                    console.error(err);
                 };
             } catch (e) {
                 addLog('Failed to start worker.', true);
@@ -128,17 +211,37 @@
             progressContainer.classList.add('hidden');
         }
 
-        // Event Listeners
+        // --- Event Listeners ---
         dropZone.onclick = () => fileInput.click();
         
-        fileInput.onchange = (e) => {
-            if (e.target.files.length > 0) {
-                selectedFile = e.target.files[0];
-                fileNameDisp.textContent = selectedFile.name;
-                if (isEngineReady) enhanceBtn.disabled = false;
-                addLog(`Loaded: ${selectedFile.name}`);
-            }
+        dropZone.ondragover = (e) => {
+            e.preventDefault();
+            dropZone.classList.add('active');
         };
+        dropZone.ondragleave = () => dropZone.classList.remove('active');
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('active');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        };
+
+        fileInput.onchange = (e) => {
+            if (e.target.files.length) handleFile(e.target.files[0]);
+        };
+
+        function handleFile(file) {
+            if (file.type !== 'application/pdf') {
+                addLog('Invalid file type. Please upload a PDF.', true);
+                return;
+            }
+            selectedFile = file;
+            fileNameDisp.textContent = selectedFile.name;
+            document.getElementById('fileIcon').classList.add('scale-110');
+            setTimeout(() => document.getElementById('fileIcon').classList.remove('scale-110'), 200);
+            
+            if (isEngineReady) enhanceBtn.disabled = false;
+            addLog(`Loaded: ${selectedFile.name}`);
+        }
 
         enhanceBtn.onclick = async () => {
             if (!selectedFile) return;
@@ -148,7 +251,7 @@
             progressContainer.classList.remove('hidden');
             progressBar.style.width = '30%'; 
             percentText.textContent = '30%';
-            statusText.textContent = 'Enhancing...';
+            statusText.textContent = 'Calculating margins...';
 
             if (!worker) initWorker();
 
@@ -157,13 +260,15 @@
                 worker.postMessage({
                     type: 'PROCESS_PDF',
                     data: e.target.result,
-                    config: { marginSize: 180 } 
+                    config: { 
+                        marginSize: parseInt(marginSlider.value),
+                        side: currentSide
+                    } 
                 }, [e.target.result]);
             };
             reader.readAsArrayBuffer(selectedFile);
         };
 
-        // Initialize
         initWorker();
     </script>
 </body>

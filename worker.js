@@ -1,6 +1,6 @@
 /**
  * worker.js - Handles PDF processing using PDFium WASM
- * Updated to support Raw API Margin Enhancement
+ * Updated to support Configurable Margins (Side & Size) via Raw API
  */
 
 self.Module = {
@@ -60,9 +60,9 @@ const initPdfium = async () => {
 };
 
 // ----------------------------------------------------------------------
-// HELPER: Raw Margin Application (The fix for your issue)
+// HELPER: Raw Margin Application
 // ----------------------------------------------------------------------
-const applyMarginsRaw = (pdfium, page, marginSize) => {
+const applyMarginsRaw = (pdfium, page, marginSize, side, pageIndex) => {
     // 1. Locate Raw C Functions
     const getMediaBox = pdfium.FPDFPage_GetMediaBox || pdfium._FPDFPage_GetMediaBox;
     const setMediaBox = pdfium.FPDFPage_SetMediaBox || pdfium._FPDFPage_SetMediaBox;
@@ -73,33 +73,53 @@ const applyMarginsRaw = (pdfium, page, marginSize) => {
     }
 
     // 2. Allocate memory for 4 floats (Left, Bottom, Right, Top)
-    // 4 bytes per float * 4 floats = 16 bytes
     const floatPtrs = pdfium._malloc(16);
     
-    // Pointers to individual floats
     const pL = floatPtrs;
     const pB = floatPtrs + 4;
     const pR = floatPtrs + 8;
     const pT = floatPtrs + 12;
 
     // 3. Get current box
-    // C Signature: FPDFPage_GetMediaBox(page, float* L, float* B, float* R, float* T)
     const success = getMediaBox(page, pL, pB, pR, pT);
     
     if (success) {
         // 4. Read values from WASM Heap (HEAPF32)
-        // We must divide the pointer by 4 because HEAPF32 is a 32-bit view
         const L = pdfium.HEAPF32[pL >> 2];
         const B = pdfium.HEAPF32[pB >> 2];
         const R = pdfium.HEAPF32[pR >> 2];
         const T = pdfium.HEAPF32[pT >> 2];
 
-        // 5. Calculate new Right boundary
-        const newR = R + marginSize;
+        // 5. Calculate new boundaries based on side
+        let newL = L;
+        let newR = R;
+        let applyRight = false;
+
+        if (side === 'right') {
+            applyRight = true;
+        } else if (side === 'left') {
+            applyRight = false;
+        } else if (side === 'alternating') {
+            // Index 0 (Page 1) is usually Recto (Right side) -> Needs Right margin (Outer)
+            // Index 1 (Page 2) is usually Verso (Left side) -> Needs Left margin (Outer)
+            applyRight = (pageIndex % 2 === 0);
+        }
+
+        if (applyRight) {
+            newR = R + marginSize;
+        } else {
+            // Extending to the left means moving the left boundary negative relative to current origin
+            newL = L - marginSize;
+        }
 
         // 6. Set new box
-        // C Signature: FPDFPage_SetMediaBox(page, float L, float B, float R, float T)
-        setMediaBox(page, L, B, newR, T);
+        setMediaBox(page, newL, B, newR, T);
+        
+        // Also update CropBox to match MediaBox if possible, to ensure viewers display it
+        const setCropBox = pdfium.FPDFPage_SetCropBox || pdfium._FPDFPage_SetCropBox;
+        if (setCropBox) {
+            setCropBox(page, newL, B, newR, T);
+        }
     }
 
     // 7. Free memory
@@ -107,7 +127,7 @@ const applyMarginsRaw = (pdfium, page, marginSize) => {
 };
 
 // ----------------------------------------------------------------------
-// HELPER: Manually implement FPDF_SaveAsCopy using raw pointers
+// HELPER: Manually implement FPDF_SaveAsCopy
 // ----------------------------------------------------------------------
 const saveViaRawAPI = (pdfium, doc) => {
     if (!pdfium.addFunction) {
@@ -188,20 +208,16 @@ self.onmessage = async (e) => {
             const closePage = pdfium.FPDF_ClosePage || pdfium._FPDF_ClosePage;
             
             const pageCount = getPageCount(doc);
+            
+            // Config extraction
             const marginSize = config?.marginSize || 150;
+            const side = config?.side || 'right'; // 'right', 'left', 'alternating'
 
             for (let i = 0; i < pageCount; i++) {
                 const page = loadPage(doc, i);
                 
-                // Attempt High-Level first, then Raw Fallback
-                if (pdfium.getPageBox && pdfium.setPageBox) {
-                    const box = pdfium.getPageBox(page, 'MediaBox');
-                    pdfium.setPageBox(page, 'MediaBox', box[0], box[1], box[2] + marginSize, box[3]);
-                    pdfium.setPageBox(page, 'CropBox', box[0], box[1], box[2] + marginSize, box[3]);
-                } else {
-                    // Use the new Raw helper
-                    applyMarginsRaw(pdfium, page, marginSize);
-                }
+                // Use Raw helper
+                applyMarginsRaw(pdfium, page, marginSize, side, i);
 
                 closePage(page);
             }
