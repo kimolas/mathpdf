@@ -14,7 +14,6 @@
             border-color: #3b82f6;
             background-color: #eff6ff;
         }
-        /* Custom Range Slider Styling */
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
             height: 16px;
@@ -35,11 +34,10 @@
 </head>
 <body class="bg-slate-50 min-h-screen flex items-center justify-center p-4 font-sans">
 
-    <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md border border-slate-100">
+    <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md border border-slate-100 shrink-0">
         <h1 class="text-2xl font-bold text-slate-800 mb-6">Textbook Margin Enhancer</h1>
         
-        <!-- File Drop Zone -->
-        <div id="dropZone" class="drop-zone rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer mb-6 hover:bg-slate-50">
+        <div id="dropZone" class="drop-zone rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer mb-6 hover:bg-slate-50 transition-colors">
             <div id="fileIcon" class="mb-3 text-blue-500 transition-transform duration-300">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -49,14 +47,11 @@
             <input type="file" id="fileInput" class="hidden" accept="application/pdf">
         </div>
 
-        <!-- Configuration Options -->
-        <div id="configSection" class="mb-8 space-y-5">
-            
-            <!-- Margin Size -->
+        <div id="configSection" class="mb-8 space-y-5 opacity-50 pointer-events-none transition-opacity duration-300">
             <div>
                 <div class="flex justify-between items-center mb-2">
-                    <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Extra Margin Size</label>
-                    <span id="marginValue" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">2.5 inches</span>
+                    <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Extra Margin</label>
+                    <span id="marginValue" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">2.5"</span>
                 </div>
                 <input type="range" id="marginSlider" min="72" max="360" step="18" value="180" class="w-full appearance-none bg-transparent focus:outline-none">
                 <div class="flex justify-between text-[10px] text-slate-400 mt-1">
@@ -66,7 +61,6 @@
                 </div>
             </div>
 
-            <!-- Margin Position -->
             <div>
                 <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Margin Position</label>
                 <div class="grid grid-cols-3 gap-2">
@@ -84,23 +78,19 @@
             </div>
         </div>
 
-        <!-- Progress Bar -->
         <div id="progressContainer" class="hidden mb-6">
             <div class="flex justify-between text-xs text-slate-500 mb-1">
                 <span id="statusText">Processing...</span>
-                <span id="percentText">0%</span>
             </div>
             <div class="w-full bg-slate-200 rounded-full h-1.5">
                 <div id="progressBar" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
             </div>
         </div>
 
-        <!-- Action Button -->
         <button id="enhanceBtn" disabled class="w-full py-3.5 px-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-slate-200 flex items-center justify-center transform active:scale-[0.98]">
-            <span>Enhance PDF</span>
+            <span>Download Enhanced PDF</span>
         </button>
 
-        <!-- Log Area -->
         <div id="log" class="mt-6 font-mono text-[10px] text-slate-400 overflow-y-auto max-h-24 border-t pt-4">
             > Initializing Worker...
         </div>
@@ -112,18 +102,14 @@
         const fileNameDisp = document.getElementById('fileName');
         const enhanceBtn = document.getElementById('enhanceBtn');
         const log = document.getElementById('log');
-        const progressContainer = document.getElementById('progressContainer');
-        const progressBar = document.getElementById('progressBar');
-        const percentText = document.getElementById('percentText');
-        const statusText = document.getElementById('statusText');
-        
-        // Config Elements
+        const configSection = document.getElementById('configSection');
         const marginSlider = document.getElementById('marginSlider');
         const marginValue = document.getElementById('marginValue');
         const sideBtns = document.querySelectorAll('.side-btn');
         const sideDesc = document.getElementById('sideDesc');
 
         let selectedFile = null;
+        let fileBuffer = null;
         let worker = null;
         let isEngineReady = false;
         let currentSide = 'right';
@@ -142,57 +128,41 @@
             log.scrollTop = log.scrollHeight;
         }
 
-        // --- Config Logic ---
         marginSlider.oninput = (e) => {
             const pts = parseInt(e.target.value);
             const inches = (pts / 72).toFixed(1);
-            marginValue.textContent = `${inches} inches`;
+            marginValue.textContent = `${inches}"`;
         };
 
         sideBtns.forEach(btn => {
             btn.onclick = () => {
-                // Reset styles
                 sideBtns.forEach(b => {
                     b.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-1', 'bg-blue-50', 'text-blue-700');
                     b.classList.add('bg-white', 'text-slate-600');
                 });
-                // Set active style
-                btn.classList.remove('bg-white', 'text-slate-600');
                 btn.classList.add('ring-2', 'ring-blue-500', 'ring-offset-1', 'bg-blue-50', 'text-blue-700');
-                
                 currentSide = btn.dataset.value;
                 sideDesc.textContent = sideDescriptions[currentSide];
             };
         });
 
-        // --- Worker Logic ---
         function initWorker() {
-            try {
-                if (worker) return;
-                
-                worker = new Worker('worker.js');
-                
-                worker.onmessage = (e) => {
-                    const { type, data } = e.data;
-                    
-                    if (type === 'READY') {
-                        isEngineReady = true;
-                        addLog('Engine Online.');
-                        if (selectedFile) enhanceBtn.disabled = false;
-                    } 
-                    else if (type === 'COMPLETE') {
-                        addLog('Complete.');
-                        downloadFile(data, `enhanced_${selectedFile.name}`);
-                        resetUI();
-                    } 
-                    else if (type === 'ERROR') {
-                        addLog(`ERROR: ${data}`, true);
-                        resetUI();
-                    }
-                };
-            } catch (e) {
-                addLog('Failed to start worker.', true);
-            }
+            if (worker) return;
+            worker = new Worker('worker.js');
+            worker.onmessage = (e) => {
+                const { type, data } = e.data;
+                if (type === 'READY') {
+                    isEngineReady = true;
+                    addLog('Engine Online.');
+                } else if (type === 'COMPLETE') {
+                    addLog('Complete.');
+                    downloadFile(data, `enhanced_${selectedFile.name}`);
+                    resetUI();
+                } else if (type === 'ERROR') {
+                    addLog(`ERROR: ${data}`, true);
+                    resetUI();
+                }
+            };
         }
 
         function downloadFile(bytes, name) {
@@ -207,17 +177,12 @@
 
         function resetUI() {
             enhanceBtn.disabled = false;
-            enhanceBtn.querySelector('span').textContent = 'Enhance PDF';
-            progressContainer.classList.add('hidden');
+            enhanceBtn.querySelector('span').textContent = 'Download Enhanced PDF';
+            document.getElementById('progressContainer').classList.add('hidden');
         }
 
-        // --- Event Listeners ---
         dropZone.onclick = () => fileInput.click();
-        
-        dropZone.ondragover = (e) => {
-            e.preventDefault();
-            dropZone.classList.add('active');
-        };
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('active'); };
         dropZone.ondragleave = () => dropZone.classList.remove('active');
         dropZone.ondrop = (e) => {
             e.preventDefault();
@@ -231,42 +196,37 @@
 
         function handleFile(file) {
             if (file.type !== 'application/pdf') {
-                addLog('Invalid file type. Please upload a PDF.', true);
+                addLog('Invalid file type.', true);
                 return;
             }
             selectedFile = file;
             fileNameDisp.textContent = selectedFile.name;
-            document.getElementById('fileIcon').classList.add('scale-110');
-            setTimeout(() => document.getElementById('fileIcon').classList.remove('scale-110'), 200);
-            
-            if (isEngineReady) enhanceBtn.disabled = false;
-            addLog(`Loaded: ${selectedFile.name}`);
-        }
-
-        enhanceBtn.onclick = async () => {
-            if (!selectedFile) return;
-
-            enhanceBtn.disabled = true;
-            enhanceBtn.querySelector('span').textContent = 'Processing...';
-            progressContainer.classList.remove('hidden');
-            progressBar.style.width = '30%'; 
-            percentText.textContent = '30%';
-            statusText.textContent = 'Calculating margins...';
-
-            if (!worker) initWorker();
-
             const reader = new FileReader();
             reader.onload = (e) => {
-                worker.postMessage({
-                    type: 'PROCESS_PDF',
-                    data: e.target.result,
-                    config: { 
-                        marginSize: parseInt(marginSlider.value),
-                        side: currentSide
-                    } 
-                }, [e.target.result]);
+                fileBuffer = e.target.result;
+                configSection.classList.remove('opacity-50', 'pointer-events-none');
+                enhanceBtn.disabled = false;
+                if (!worker) initWorker();
+                addLog(`Loaded: ${selectedFile.name}`);
             };
-            reader.readAsArrayBuffer(selectedFile);
+            reader.readAsArrayBuffer(file);
+        }
+
+        enhanceBtn.onclick = () => {
+            if (!fileBuffer) return;
+            enhanceBtn.disabled = true;
+            enhanceBtn.querySelector('span').textContent = 'Processing...';
+            document.getElementById('progressContainer').classList.remove('hidden');
+            document.getElementById('progressBar').style.width = '100%'; 
+
+            worker.postMessage({
+                type: 'PROCESS_PDF',
+                data: fileBuffer,
+                config: { 
+                    marginSize: parseInt(marginSlider.value),
+                    side: currentSide
+                } 
+            });
         };
 
         initWorker();

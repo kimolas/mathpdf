@@ -1,12 +1,13 @@
 /**
  * worker.js - Handles PDF processing using PDFium WASM
- * Updated to support Configurable Margins (Side & Size) via Raw API
+ * Focused core processing only.
  */
 
 self.Module = {
     onRuntimeInitialized: function() {
         if (!pdfiumModule) {
             pdfiumModule = self.Module;
+            initializeLibrary(pdfiumModule);
             self.postMessage({ type: 'READY' });
         }
     },
@@ -23,140 +24,93 @@ try {
 
 let pdfiumModule = null;
 
+const initializeLibrary = (module) => {
+    const init = module.FPDF_InitLibrary || module._FPDF_InitLibrary;
+    if (init) init();
+};
+
+const getHeap = (module, type) => {
+    const heap = module[type] || self[type];
+    if (!heap && module.wasmMemory) {
+        if (type === 'HEAPU8') return new Uint8Array(module.wasmMemory.buffer);
+        if (type === 'HEAP32') return new Int32Array(module.wasmMemory.buffer);
+        if (type === 'HEAPF32') return new Float32Array(module.wasmMemory.buffer);
+    }
+    return heap;
+};
+
 const initPdfium = async () => {
     if (pdfiumModule) return pdfiumModule;
-
-    if (self.Module && self.Module.asm) {
-        pdfiumModule = self.Module;
-        return pdfiumModule;
-    }
 
     const factoryNames = ['createPdfium', 'pdfium', 'PDFiumModule'];
     for (const name of factoryNames) {
         if (typeof self[name] === 'function') {
             pdfiumModule = await self[name](self.Module);
+            initializeLibrary(pdfiumModule);
             return pdfiumModule;
         }
     }
 
-    if (self.Module) {
-        return new Promise((resolve, reject) => {
-            let attempts = 0;
-            const check = setInterval(() => {
-                if (self.Module.asm || attempts > 50) {
-                    clearInterval(check);
-                    if (self.Module.asm) {
-                        pdfiumModule = self.Module;
-                        resolve(pdfiumModule);
-                    } else {
-                        reject(new Error("Timeout waiting for Module.asm"));
-                    }
-                }
-                attempts++;
-            }, 100);
-        });
+    if (self.Module && (self.Module.asm || self.Module._FPDF_InitLibrary)) {
+        pdfiumModule = self.Module;
+        initializeLibrary(pdfiumModule);
+        return pdfiumModule;
     }
+
     throw new Error("No PDFium module found.");
 };
 
-// ----------------------------------------------------------------------
-// HELPER: Raw Margin Application
-// ----------------------------------------------------------------------
 const applyMarginsRaw = (pdfium, page, marginSize, side, pageIndex) => {
-    // 1. Locate Raw C Functions
     const getMediaBox = pdfium.FPDFPage_GetMediaBox || pdfium._FPDFPage_GetMediaBox;
     const setMediaBox = pdfium.FPDFPage_SetMediaBox || pdfium._FPDFPage_SetMediaBox;
+    const setCropBox = pdfium.FPDFPage_SetCropBox || pdfium._FPDFPage_SetCropBox;
 
-    if (!getMediaBox || !setMediaBox) {
-        console.warn("Raw MediaBox functions not found. Margins cannot be applied.");
-        return;
-    }
-
-    // 2. Allocate memory for 4 floats (Left, Bottom, Right, Top)
     const floatPtrs = pdfium._malloc(16);
-    
-    const pL = floatPtrs;
-    const pB = floatPtrs + 4;
-    const pR = floatPtrs + 8;
-    const pT = floatPtrs + 12;
-
-    // 3. Get current box
-    const success = getMediaBox(page, pL, pB, pR, pT);
+    const success = getMediaBox(page, floatPtrs, floatPtrs + 4, floatPtrs + 8, floatPtrs + 12);
     
     if (success) {
-        // 4. Read values from WASM Heap (HEAPF32)
-        const L = pdfium.HEAPF32[pL >> 2];
-        const B = pdfium.HEAPF32[pB >> 2];
-        const R = pdfium.HEAPF32[pR >> 2];
-        const T = pdfium.HEAPF32[pT >> 2];
+        const heapF32 = getHeap(pdfium, 'HEAPF32');
+        const L = heapF32[floatPtrs >> 2];
+        const B = heapF32[(floatPtrs + 4) >> 2];
+        const R = heapF32[(floatPtrs + 8) >> 2];
+        const T = heapF32[(floatPtrs + 12) >> 2];
 
-        // 5. Calculate new boundaries based on side
-        let newL = L;
-        let newR = R;
-        let applyRight = false;
+        const applyRight = (side === 'right') || (side === 'alternating' && pageIndex % 2 === 0);
+        const newL = applyRight ? L : L - marginSize;
+        const newR = applyRight ? R + marginSize : R;
 
-        if (side === 'right') {
-            applyRight = true;
-        } else if (side === 'left') {
-            applyRight = false;
-        } else if (side === 'alternating') {
-            // Index 0 (Page 1) is usually Recto (Right side) -> Needs Right margin (Outer)
-            // Index 1 (Page 2) is usually Verso (Left side) -> Needs Left margin (Outer)
-            applyRight = (pageIndex % 2 === 0);
-        }
-
-        if (applyRight) {
-            newR = R + marginSize;
-        } else {
-            // Extending to the left means moving the left boundary negative relative to current origin
-            newL = L - marginSize;
-        }
-
-        // 6. Set new box
         setMediaBox(page, newL, B, newR, T);
-        
-        // Also update CropBox to match MediaBox if possible, to ensure viewers display it
-        const setCropBox = pdfium.FPDFPage_SetCropBox || pdfium._FPDFPage_SetCropBox;
-        if (setCropBox) {
-            setCropBox(page, newL, B, newR, T);
-        }
+        if (setCropBox) setCropBox(page, newL, B, newR, T);
     }
 
-    // 7. Free memory
     pdfium._free(floatPtrs);
 };
 
-// ----------------------------------------------------------------------
-// HELPER: Manually implement FPDF_SaveAsCopy
-// ----------------------------------------------------------------------
 const saveViaRawAPI = (pdfium, doc) => {
-    if (!pdfium.addFunction) {
-        throw new Error("Missing 'addFunction'. Cannot save via raw API.");
-    }
-
     const dataChunks = [];
-    
     const writeBlock = (pThis, pData, size) => {
-        const chunk = pdfium.HEAPU8.slice(pData, pData + size);
+        const heapU8 = getHeap(pdfium, 'HEAPU8');
+        const chunk = heapU8.slice(pData, pData + size);
         dataChunks.push(chunk);
-        return 1; 
+        return 1;
     };
 
+    if (!pdfium.addFunction) throw new Error("addFunction missing.");
+    
     const writeBlockPtr = pdfium.addFunction(writeBlock, 'iiii');
     const fileWritePtr = pdfium._malloc(8);
+    const heap32 = getHeap(pdfium, 'HEAP32');
     
-    pdfium.HEAP32[fileWritePtr >> 2] = 1;
-    pdfium.HEAP32[(fileWritePtr + 4) >> 2] = writeBlockPtr;
+    heap32[fileWritePtr >> 2] = 1;
+    heap32[(fileWritePtr + 4) >> 2] = writeBlockPtr;
 
     const saveFunc = pdfium.FPDF_SaveAsCopy || pdfium._FPDF_SaveAsCopy;
-    if (!saveFunc) throw new Error("FPDF_SaveAsCopy function not exported.");
-
     const success = saveFunc(doc, fileWritePtr, 0);
 
     pdfium._free(fileWritePtr);
     pdfium.removeFunction(writeBlockPtr);
 
-    if (!success) throw new Error("FPDF_SaveAsCopy returned false.");
+    if (!success) throw new Error("FPDF_SaveAsCopy failed.");
 
     const totalLength = dataChunks.reduce((acc, chunk) => acc + chunk.length, 0);
     const result = new Uint8Array(totalLength);
@@ -168,84 +122,44 @@ const saveViaRawAPI = (pdfium, doc) => {
     return result;
 };
 
-
-initPdfium().then(() => self.postMessage({ type: 'READY' })).catch(console.error);
-
 self.onmessage = async (e) => {
     const { type, data, config } = e.data;
+    
+    try {
+        const pdfium = await initPdfium();
+        const inputData = new Uint8Array(data);
 
-    if (type === 'PROCESS_PDF') {
-        let fileBufferPtr = null;
-        let doc = null;
-        
-        try {
-            const pdfium = await initPdfium();
-            const inputData = new Uint8Array(data);
+        const loadDoc = (bytes) => {
+            const ptr = pdfium._malloc(bytes.length);
+            const heapU8 = getHeap(pdfium, 'HEAPU8');
+            heapU8.set(bytes, ptr);
+            
+            const loader = pdfium.FPDF_LoadMemDocument || pdfium._FPDF_LoadMemDocument;
+            const doc = loader(ptr, bytes.length, 0); 
+            return { doc, ptr };
+        };
 
-            // --- LOAD ---
-            const fileLength = inputData.length;
-            const malloc = pdfium._malloc || pdfium.malloc;
-            const free = pdfium._free || pdfium.free;
+        if (type === 'PROCESS_PDF') {
+            const { doc, ptr } = loadDoc(inputData);
+            if (!doc) throw new Error("FPDF_LoadMemDocument failed.");
 
-            if (!malloc) throw new Error("WASM malloc function not found.");
-
-            fileBufferPtr = malloc(fileLength);
-            pdfium.HEAPU8.set(inputData, fileBufferPtr);
-
-            if (pdfium.FPDF_LoadMemDocument) {
-                doc = pdfium.FPDF_LoadMemDocument(fileBufferPtr, fileLength, "");
-            } else if (pdfium._FPDF_LoadMemDocument) {
-                doc = pdfium._FPDF_LoadMemDocument(fileBufferPtr, fileLength, "");
-            } else {
-                 throw new Error("FPDF_LoadMemDocument not found.");
-            }
-
-            if (!doc) throw new Error("FPDF_LoadMemDocument returned null.");
-
-            // --- PROCESS ---
             const getPageCount = pdfium.FPDF_GetPageCount || pdfium._FPDF_GetPageCount;
-            const loadPage = pdfium.FPDF_LoadPage || pdfium._FPDF_LoadPage;
-            const closePage = pdfium.FPDF_ClosePage || pdfium._FPDF_ClosePage;
+            const count = getPageCount(doc);
             
-            const pageCount = getPageCount(doc);
-            
-            // Config extraction
-            const marginSize = config?.marginSize || 150;
-            const side = config?.side || 'right'; // 'right', 'left', 'alternating'
-
-            for (let i = 0; i < pageCount; i++) {
+            for (let i = 0; i < count; i++) {
+                const loadPage = pdfium.FPDF_LoadPage || pdfium._FPDF_LoadPage;
                 const page = loadPage(doc, i);
-                
-                // Use Raw helper
-                applyMarginsRaw(pdfium, page, marginSize, side, i);
-
-                closePage(page);
+                applyMarginsRaw(pdfium, page, config.marginSize, config.side, i);
+                (pdfium.FPDF_ClosePage || pdfium._FPDF_ClosePage)(page);
             }
-
-            // --- SAVE ---
-            let resultBytes = null;
             
-            if (pdfium.saveDocument) {
-                resultBytes = pdfium.saveDocument(doc);
-            } else {
-                resultBytes = saveViaRawAPI(pdfium, doc);
-            }
-
-            // --- CLEANUP ---
-            const closeDoc = pdfium.FPDF_CloseDocument || pdfium._FPDF_CloseDocument;
-            closeDoc(doc);
-            if (fileBufferPtr) free(fileBufferPtr);
-
-            if (resultBytes) {
-                self.postMessage({ type: 'COMPLETE', data: resultBytes }, [resultBytes.buffer]);
-            } else {
-                throw new Error("Saved data was empty.");
-            }
-
-        } catch (err) {
-            if (fileBufferPtr && pdfiumModule && pdfiumModule._free) pdfiumModule._free(fileBufferPtr);
-            self.postMessage({ type: 'ERROR', data: err.message });
-            console.error(err);
+            const res = saveViaRawAPI(pdfium, doc);
+            (pdfium.FPDF_CloseDocument || pdfium._FPDF_CloseDocument)(doc);
+            pdfium._free(ptr);
+            
+            self.postMessage({ type: 'COMPLETE', data: res }, [res.buffer]);
         }
+    } catch (err) {
+        self.postMessage({ type: 'ERROR', data: err.message || "Unknown Worker Error" });
     }
 };
