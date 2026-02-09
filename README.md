@@ -5,10 +5,17 @@ A client-side web application that processes PDFs to add wide margins for note-t
 ## Features
 
 * **Client-Side Processing:** No server uploads required; all processing happens in the browser.
-* **Configurable Margins:**
-  * Adjust margin size (1" to 5").
-  * Select margin position: Right, Left, or Alternating (Outer margins for double-sided printing).
-* **Drag-and-Drop Interface:** Simple UI for loading and processing files.
+* **Batch Processing:**
+  * Process multiple PDFs simultaneously using multi-threaded Web Workers.
+  * Automatically bundles multiple outputs into a single ZIP file.
+* **Smart Layouts:**
+  * **Tablet Match:** Optimizes margins for specific devices (Kindle Scribe, reMarkable 2, iPad Pro, Boox, Supernote, Samsung Galaxy Tab).
+  * **Fixed Margins:** Manually adjust margin size (1" to 5").
+  * **Justification:** Right, Left, or Alternating (Outer margins for double-sided printing).
+* **Modern UI:**
+  * Drag-and-drop interface.
+  * Dark mode support (respects system preference).
+  * Settings are automatically saved to your browser.
 
 ## Prerequisites
 
@@ -48,6 +55,7 @@ To run this application locally, you need the following files in the same direct
 * **Engine:** PDFium (Google's open-source PDF rendering engine) compiled to WebAssembly.
 * **Implementation:**
   * Uses `worker.js` to offload heavy processing from the main UI thread.
+  * Implements a worker pool to utilize multiple CPU cores for batch processing.
   * Implements direct memory access (HEAPF32/HEAPU8) to interface with the raw C-API of PDFium (`FPDFPage_GetMediaBox`, `FPDFPage_SetMediaBox`).
   * Bypasses high-level JS wrappers to ensure compatibility with raw/minimal WASM builds.
 * **Memory Management:** Manually handles `malloc` and `free` for C-structs and float arrays within the WASM heap to prevent memory leaks during batch operations.

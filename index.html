@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Textbook Margin Enhancer</title>
+    <title>PDF Margin Enhancer</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
@@ -51,7 +52,7 @@
 
     <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-8 w-full max-w-md border border-slate-100 dark:border-slate-800 shrink-0 transition-colors duration-300">
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-slate-800 dark:text-white">Textbook Margin Enhancer</h1>
+            <h1 class="text-2xl font-bold text-slate-800 dark:text-white">PDF Margin Enhancer</h1>
             <button id="themeToggle" class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors">
                 <!-- Moon (Show in Light Mode) -->
                 <svg class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -227,6 +228,7 @@
         let isEngineReady = false;
         let currentSide = 'right';
         let currentMode = 'tablet'; // Default to tablet
+        let batchResults = [];
 
         const sideDescriptions = {
             'right': 'Standard for digital reading or single-sided print.',
@@ -383,6 +385,7 @@
             document.getElementById('progressContainer').classList.add('hidden');
             cancelBtn.classList.add('hidden');
             processQueue = [];
+            batchResults = [];
             processingActive = false;
         }
 
@@ -473,14 +476,14 @@
             }
         }
 
-        function handleJobComplete(workerObj, type, data) {
+        async function handleJobComplete(workerObj, type, data) {
             const file = workerObj.currentFile;
             workerObj.busy = false;
             workerObj.currentFile = null;
             jobsCompleted++;
 
             if (type === 'COMPLETE') {
-                downloadFile(data, `enhanced_${file.name}`);
+                batchResults.push({ name: `enhanced_${file.name}`, data: data });
             } else {
                 addLog(`Error processing ${file.name}: ${data}`, true);
             }
@@ -489,6 +492,28 @@
 
             if (jobsCompleted >= processQueue.length) {
                 addLog('Batch processing complete.');
+                
+                if (batchResults.length === 1) {
+                    downloadFile(batchResults[0].data, batchResults[0].name);
+                } else if (batchResults.length > 1) {
+                    addLog('Generating ZIP archive...');
+                    try {
+                        const zip = new JSZip();
+                        batchResults.forEach(item => zip.file(item.name, item.data));
+                        const content = await zip.generateAsync({ type: 'blob' });
+                        
+                        const url = URL.createObjectURL(content);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'enhanced_pdfs.zip';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        addLog('ZIP downloaded.');
+                    } catch (err) {
+                        addLog(`Error creating ZIP: ${err.message}`, true);
+                    }
+                }
+
                 resetUI();
             } else {
                 processNextJob(workerObj);
@@ -503,6 +528,7 @@
             workerPool.forEach(w => w.worker.terminate());
             workerPool.length = 0;
             isEngineReady = false;
+            batchResults = [];
             
             resetUI();
             setTimeout(initWorkerPool, 500);
@@ -518,6 +544,7 @@
             jobsCompleted = 0;
             nextJobIndex = 0;
             processingActive = true;
+            batchResults = [];
             
             updateProgress();
             
