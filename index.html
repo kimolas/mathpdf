@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Textbook Margin Enhancer</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
     <style>
         .drop-zone {
             border: 2px dashed #cbd5e1;
@@ -13,6 +18,13 @@
         .drop-zone.active {
             border-color: #3b82f6;
             background-color: #eff6ff;
+        }
+        .dark .drop-zone {
+            border-color: #334155;
+        }
+        .dark .drop-zone.active {
+            background-color: #1e293b;
+            border-color: #3b82f6;
         }
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none;
@@ -30,39 +42,54 @@
             background: #e2e8f0;
             border-radius: 2px;
         }
+        .dark input[type=range]::-webkit-slider-runnable-track {
+            background: #334155;
+        }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen flex items-center justify-center p-4 font-sans">
+<body class="bg-slate-50 dark:bg-slate-950 min-h-screen flex items-center justify-center p-4 font-sans transition-colors duration-300">
 
-    <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md border border-slate-100 shrink-0">
-        <h1 class="text-2xl font-bold text-slate-800 mb-6">Textbook Margin Enhancer</h1>
+    <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-xl p-8 w-full max-w-md border border-slate-100 dark:border-slate-800 shrink-0 transition-colors duration-300">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold text-slate-800 dark:text-white">Textbook Margin Enhancer</h1>
+            <button id="themeToggle" class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors">
+                <!-- Moon (Show in Light Mode) -->
+                <svg class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                </svg>
+                <!-- Sun (Show in Dark Mode) -->
+                <svg class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                </svg>
+            </button>
+        </div>
         
-        <div id="dropZone" class="drop-zone rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer mb-6 hover:bg-slate-50 transition-colors">
+        <div id="dropZone" class="drop-zone rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer mb-6 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
             <div id="fileIcon" class="mb-3 text-blue-500 transition-transform duration-300">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
             </div>
-            <p id="fileName" class="text-sm font-medium text-slate-600 text-center truncate w-full px-4">Click or drag PDFs here</p>
+            <p id="fileName" class="text-sm font-medium text-slate-600 dark:text-slate-400 text-center truncate w-full px-4">Click or drag PDFs here</p>
             <input type="file" id="fileInput" class="hidden" accept="application/pdf" multiple>
         </div>
 
         <div id="configSection" class="mb-8 space-y-5 opacity-50 pointer-events-none transition-opacity duration-300">
             <!-- Mode Switcher -->
-            <div class="bg-slate-100 p-1 rounded-xl flex relative">
-                <div id="modeIndicator" class="absolute top-1 left-1 w-[calc(50%-4px)] h-[calc(100%-8px)] bg-white rounded-lg shadow-sm transition-all duration-300 ease-out"></div>
-                <button id="modeTabletBtn" class="flex-1 py-2 text-xs font-bold z-10 relative transition-colors duration-300 text-blue-600">Tablet Match</button>
-                <button id="modeFixedBtn" class="flex-1 py-2 text-xs font-bold z-10 relative transition-colors duration-300 text-slate-500">Fixed Margin</button>
+            <div class="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl flex relative transition-colors">
+                <div id="modeIndicator" class="absolute top-1 left-1 w-[calc(50%-4px)] h-[calc(100%-8px)] bg-white dark:bg-slate-600 rounded-lg shadow-sm transition-all duration-300 ease-out"></div>
+                <button id="modeTabletBtn" class="flex-1 py-2 text-xs font-bold z-10 relative transition-colors duration-300 text-blue-600 dark:text-blue-400">Tablet Match</button>
+                <button id="modeFixedBtn" class="flex-1 py-2 text-xs font-bold z-10 relative transition-colors duration-300 text-slate-500 dark:text-slate-400">Fixed Margin</button>
             </div>
 
             <!-- Fixed Margin Controls -->
             <div id="fixedControls" class="hidden transition-all duration-300">
                 <div class="flex justify-between items-center mb-2">
-                    <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Added Width</label>
-                    <span id="marginValue" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">2.5"</span>
+                    <label class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Added Width</label>
+                    <span id="marginValue" class="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">2.5"</span>
                 </div>
                 <input type="range" id="marginSlider" min="72" max="360" step="18" value="180" class="w-full appearance-none bg-transparent focus:outline-none">
-                <div class="flex justify-between text-[10px] text-slate-400 mt-1">
+                <div class="flex justify-between text-[10px] text-slate-400 dark:text-slate-500 mt-1">
                     <span>1"</span>
                     <span>2.5"</span>
                     <span>5"</span>
@@ -72,8 +99,8 @@
             <!-- Tablet Controls -->
             <div id="tabletControls" class="space-y-4">
                 <div>
-                    <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Target Device</label>
-                    <select id="deviceSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none transition-shadow">
+                    <label class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">Target Device</label>
+                    <select id="deviceSelect" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-medium rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none transition-shadow">
                         <option value="2480,1860">Kindle Scribe</option>
                         <option value="1872,1404">reMarkable 2</option>
                         <option value="1872,1404">Supernote A5 X</option>
@@ -89,63 +116,86 @@
                 
                 <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <label class="text-[10px] font-semibold text-slate-400 uppercase block mb-1">Landscape Width (px)</label>
-                        <input type="number" id="customWidth" value="2480" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-mono focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                        <label class="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase block mb-1">Landscape Width (px)</label>
+                        <input type="number" id="customWidth" value="2480" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg p-2 text-xs font-mono focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none transition-all">
                     </div>
                     <div>
-                        <label class="text-[10px] font-semibold text-slate-400 uppercase block mb-1">Landscape Height (px)</label>
-                        <input type="number" id="customHeight" value="1860" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-mono focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                        <label class="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase block mb-1">Landscape Height (px)</label>
+                        <input type="number" id="customHeight" value="1860" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg p-2 text-xs font-mono focus:ring-2 focus:ring-blue-100 dark:focus:ring-blue-900 outline-none transition-all">
                     </div>
                 </div>
 
                 <div>
                     <div class="flex justify-between items-center mb-2">
-                        <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Vertical Padding</label>
-                        <span id="epsilonValue" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">0.5"</span>
+                        <label class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Vertical Padding</label>
+                        <span id="epsilonValue" class="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">0.5"</span>
                     </div>
                     <input type="range" id="epsilonSlider" min="0" max="72" step="9" value="36" class="w-full appearance-none bg-transparent focus:outline-none">
                 </div>
             </div>
 
             <div>
-                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Margin Position</label>
+                <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Margin Position</label>
                 <div class="grid grid-cols-3 gap-2">
-                    <button type="button" class="side-btn active ring-2 ring-blue-500 ring-offset-1 bg-blue-50 text-blue-700 border-blue-200 border rounded-lg py-2 text-xs font-medium transition-all" data-value="right">
+                    <button type="button" class="side-btn active ring-2 ring-blue-500 ring-offset-1 bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 border rounded-lg py-2 text-xs font-medium transition-all" data-value="right">
                         Right
                     </button>
-                    <button type="button" class="side-btn bg-white text-slate-600 border-slate-200 border rounded-lg py-2 text-xs font-medium hover:bg-slate-50 transition-all" data-value="left">
+                    <button type="button" class="side-btn bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 border rounded-lg py-2 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-all" data-value="left">
                         Left
                     </button>
-                    <button type="button" class="side-btn bg-white text-slate-600 border-slate-200 border rounded-lg py-2 text-xs font-medium hover:bg-slate-50 transition-all" data-value="alternating">
+                    <button type="button" class="side-btn bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 border rounded-lg py-2 text-xs font-medium hover:bg-slate-50 dark:hover:bg-slate-700 transition-all" data-value="alternating">
                         Outer
                     </button>
                 </div>
-                <p id="sideDesc" class="text-[10px] text-slate-400 mt-1.5 h-3">Standard for single-sided printing.</p>
+                <p id="sideDesc" class="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5 h-3">Standard for single-sided printing.</p>
             </div>
         </div>
 
         <div id="progressContainer" class="hidden mb-6">
-            <div class="flex justify-between text-xs text-slate-500 mb-1">
+            <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
                 <span id="statusText">Processing...</span>
             </div>
-            <div class="w-full bg-slate-200 rounded-full h-1.5">
+            <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5">
                 <div id="progressBar" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
             </div>
         </div>
 
         <div class="flex gap-3">
-            <button id="enhanceBtn" disabled class="flex-1 py-3.5 px-4 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-slate-200 flex items-center justify-center transform active:scale-[0.98]">
+            <button id="enhanceBtn" disabled class="flex-1 py-3.5 px-4 bg-slate-900 hover:bg-slate-800 dark:bg-blue-600 dark:hover:bg-blue-500 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all shadow-lg shadow-slate-200 dark:shadow-none flex items-center justify-center transform active:scale-[0.98]">
                 <span>Download Enhanced PDF</span>
             </button>
-            <button id="cancelBtn" type="button" class="hidden px-6 py-3.5 bg-red-50 text-red-600 font-bold rounded-xl border border-red-100 hover:bg-red-100 transition-all shadow-sm">Cancel</button>
+            <button id="cancelBtn" type="button" class="hidden px-6 py-3.5 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-bold rounded-xl border border-red-100 dark:border-red-900/50 hover:bg-red-100 dark:hover:bg-red-900/40 transition-all shadow-sm">Cancel</button>
         </div>
 
-        <div id="log" class="mt-6 font-mono text-[10px] text-slate-400 overflow-y-auto max-h-24 border-t pt-4">
+        <div id="log" class="mt-6 font-mono text-[10px] text-slate-400 dark:text-slate-500 overflow-y-auto max-h-24 border-t dark:border-slate-800 pt-4">
             > Initializing Worker...
         </div>
     </div>
 
     <script>
+        // --- Dark Mode Logic ---
+        const themeToggle = document.getElementById('themeToggle');
+        const html = document.documentElement;
+
+        function updateTheme() {
+            if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                html.classList.add('dark');
+            } else {
+                html.classList.remove('dark');
+            }
+        }
+
+        updateTheme(); // Run on load
+
+        themeToggle.onclick = () => {
+            if (html.classList.contains('dark')) {
+                localStorage.theme = 'light';
+            } else {
+                localStorage.theme = 'dark';
+            }
+            updateTheme();
+        };
+
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const fileNameDisp = document.getElementById('fileName');
@@ -242,13 +292,17 @@
             if (mode === 'tablet') {
                 modeIndicator.style.transform = 'translateX(0)';
                 modeTabletBtn.classList.replace('text-slate-500', 'text-blue-600');
+                modeTabletBtn.classList.replace('dark:text-slate-400', 'dark:text-blue-400');
                 modeFixedBtn.classList.replace('text-blue-600', 'text-slate-500');
+                modeFixedBtn.classList.replace('dark:text-blue-400', 'dark:text-slate-400');
                 tabletControls.classList.remove('hidden');
                 fixedControls.classList.add('hidden');
             } else {
                 modeIndicator.style.transform = 'translateX(100%)';
                 modeFixedBtn.classList.replace('text-slate-500', 'text-blue-600');
+                modeFixedBtn.classList.replace('dark:text-slate-400', 'dark:text-blue-400');
                 modeTabletBtn.classList.replace('text-blue-600', 'text-slate-500');
+                modeTabletBtn.classList.replace('dark:text-blue-400', 'dark:text-slate-400');
                 fixedControls.classList.remove('hidden');
                 tabletControls.classList.add('hidden');
             }
@@ -277,10 +331,11 @@
         sideBtns.forEach(btn => {
             btn.onclick = () => {
                 sideBtns.forEach(b => {
-                    b.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-1', 'bg-blue-50', 'text-blue-700');
-                    b.classList.add('bg-white', 'text-slate-600');
+                    b.classList.remove('ring-2', 'ring-blue-500', 'ring-offset-1', 'bg-blue-50', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300', 'border-blue-200', 'dark:border-blue-800');
+                    b.classList.add('bg-white', 'dark:bg-slate-800', 'text-slate-600', 'dark:text-slate-300', 'border-slate-200', 'dark:border-slate-700');
                 });
-                btn.classList.add('ring-2', 'ring-blue-500', 'ring-offset-1', 'bg-blue-50', 'text-blue-700');
+                btn.classList.remove('bg-white', 'dark:bg-slate-800', 'text-slate-600', 'dark:text-slate-300', 'border-slate-200', 'dark:border-slate-700');
+                btn.classList.add('ring-2', 'ring-blue-500', 'ring-offset-1', 'bg-blue-50', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300', 'border-blue-200', 'dark:border-blue-800');
                 currentSide = btn.dataset.value;
                 sideDesc.textContent = sideDescriptions[currentSide];
                 saveSettings();
