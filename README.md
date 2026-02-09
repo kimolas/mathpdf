@@ -58,7 +58,20 @@ To run this application locally, you need the following files in the same direct
   * Implements a worker pool to utilize multiple CPU cores for batch processing.
   * Implements direct memory access (HEAPF32/HEAPU8) to interface with the raw C-API of PDFium (`FPDFPage_GetMediaBox`, `FPDFPage_SetMediaBox`).
   * Bypasses high-level JS wrappers to ensure compatibility with raw/minimal WASM builds.
-* **Memory Management:** Manually handles `malloc` and `free` for C-structs and float arrays within the WASM heap to prevent memory leaks during batch operations.
+  * **Memory Management:** Manually handles `malloc` and `free` for C-structs and float arrays within the WASM heap to prevent memory leaks during batch operations.
+
+## Testing
+
+This project uses **Playwright** for end-to-end integration testing. The tests spin up a local server, launch a headless browser, and verify the full PDF processing pipeline.
+
+1. **Install Dependencies:**
+   ```bash
+   npm install
+   ```
+2. **Run Tests:**
+   ```bash
+   npx playwright test
+   ```
 
 ## Troubleshooting
 
