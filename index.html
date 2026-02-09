@@ -48,9 +48,17 @@
         </div>
 
         <div id="configSection" class="mb-8 space-y-5 opacity-50 pointer-events-none transition-opacity duration-300">
-            <div>
+            <!-- Mode Switcher -->
+            <div class="bg-slate-100 p-1 rounded-xl flex relative">
+                <div id="modeIndicator" class="absolute top-1 left-1 w-[calc(50%-4px)] h-[calc(100%-8px)] bg-white rounded-lg shadow-sm transition-all duration-300 ease-out"></div>
+                <button id="modeFixedBtn" class="flex-1 py-2 text-xs font-bold z-10 relative transition-colors duration-300 text-blue-600">Fixed Margin</button>
+                <button id="modeTabletBtn" class="flex-1 py-2 text-xs font-bold z-10 relative transition-colors duration-300 text-slate-500">Tablet Match</button>
+            </div>
+
+            <!-- Fixed Margin Controls -->
+            <div id="fixedControls" class="transition-all duration-300">
                 <div class="flex justify-between items-center mb-2">
-                    <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Extra Margin</label>
+                    <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Added Width</label>
                     <span id="marginValue" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">2.5"</span>
                 </div>
                 <input type="range" id="marginSlider" min="72" max="360" step="18" value="180" class="w-full appearance-none bg-transparent focus:outline-none">
@@ -58,6 +66,40 @@
                     <span>1"</span>
                     <span>2.5"</span>
                     <span>5"</span>
+                </div>
+            </div>
+
+            <!-- Tablet Controls -->
+            <div id="tabletControls" class="hidden space-y-4">
+                <div>
+                    <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">Target Device</label>
+                    <select id="deviceSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs font-medium rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none transition-shadow">
+                        <option value="2480,1860">Kindle Scribe (Landscape)</option>
+                        <option value="1872,1404">reMarkable 2 (Landscape)</option>
+                        <option value="2732,2048">iPad Pro 12.9" (Landscape)</option>
+                        <option value="2388,1668">iPad Pro 11" (Landscape)</option>
+                        <option value="2266,1488">iPad Mini 6 (Landscape)</option>
+                        <option value="custom">Custom Resolution</option>
+                    </select>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase block mb-1">Width (px)</label>
+                        <input type="number" id="customWidth" value="2480" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-mono focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                    </div>
+                    <div>
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase block mb-1">Height (px)</label>
+                        <input type="number" id="customHeight" value="1860" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-mono focus:ring-2 focus:ring-blue-100 outline-none transition-all">
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Vertical Padding</label>
+                        <span id="epsilonValue" class="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">0.5"</span>
+                    </div>
+                    <input type="range" id="epsilonSlider" min="0" max="72" step="9" value="36" class="w-full appearance-none bg-transparent focus:outline-none">
                 </div>
             </div>
 
@@ -105,14 +147,25 @@
         const configSection = document.getElementById('configSection');
         const marginSlider = document.getElementById('marginSlider');
         const marginValue = document.getElementById('marginValue');
+        const epsilonSlider = document.getElementById('epsilonSlider');
+        const epsilonValue = document.getElementById('epsilonValue');
         const sideBtns = document.querySelectorAll('.side-btn');
         const sideDesc = document.getElementById('sideDesc');
+        const modeFixedBtn = document.getElementById('modeFixedBtn');
+        const modeTabletBtn = document.getElementById('modeTabletBtn');
+        const modeIndicator = document.getElementById('modeIndicator');
+        const fixedControls = document.getElementById('fixedControls');
+        const tabletControls = document.getElementById('tabletControls');
+        const deviceSelect = document.getElementById('deviceSelect');
+        const customWidthInput = document.getElementById('customWidth');
+        const customHeightInput = document.getElementById('customHeight');
 
         let selectedFile = null;
         let fileBuffer = null;
         let worker = null;
         let isEngineReady = false;
         let currentSide = 'right';
+        let currentMode = 'fixed'; // 'fixed' or 'tablet'
 
         const sideDescriptions = {
             'right': 'Standard for digital reading or single-sided print.',
@@ -133,6 +186,47 @@
             const inches = (pts / 72).toFixed(1);
             marginValue.textContent = `${inches}"`;
         };
+
+        epsilonSlider.oninput = (e) => {
+            const pts = parseInt(e.target.value);
+            const inches = (pts / 72).toFixed(2);
+            epsilonValue.textContent = `${inches}"`;
+        };
+
+        // Mode Switching Logic
+        function setMode(mode) {
+            currentMode = mode;
+            if (mode === 'fixed') {
+                modeIndicator.style.transform = 'translateX(0)';
+                modeFixedBtn.classList.replace('text-slate-500', 'text-blue-600');
+                modeTabletBtn.classList.replace('text-blue-600', 'text-slate-500');
+                fixedControls.classList.remove('hidden');
+                tabletControls.classList.add('hidden');
+            } else {
+                modeIndicator.style.transform = 'translateX(100%)';
+                modeTabletBtn.classList.replace('text-slate-500', 'text-blue-600');
+                modeFixedBtn.classList.replace('text-blue-600', 'text-slate-500');
+                fixedControls.classList.add('hidden');
+                tabletControls.classList.remove('hidden');
+            }
+        }
+
+        modeFixedBtn.onclick = () => setMode('fixed');
+        modeTabletBtn.onclick = () => setMode('tablet');
+
+        // Device Selection Logic
+        deviceSelect.onchange = (e) => {
+            if (e.target.value !== 'custom') {
+                const [w, h] = e.target.value.split(',');
+                customWidthInput.value = w;
+                customHeightInput.value = h;
+            }
+        };
+
+        // Auto-select custom if user types
+        [customWidthInput, customHeightInput].forEach(input => {
+            input.oninput = () => deviceSelect.value = 'custom';
+        });
 
         sideBtns.forEach(btn => {
             btn.onclick = () => {
@@ -219,13 +313,24 @@
             document.getElementById('progressContainer').classList.remove('hidden');
             document.getElementById('progressBar').style.width = '100%'; 
 
+            const config = {
+                side: currentSide
+            };
+
+            if (currentMode === 'fixed') {
+                config.marginSize = parseInt(marginSlider.value);
+            } else {
+                config.tablet = {
+                    width: parseInt(customWidthInput.value),
+                    height: parseInt(customHeightInput.value),
+                    epsilon: parseInt(epsilonSlider.value)
+                };
+            }
+
             worker.postMessage({
                 type: 'PROCESS_PDF',
                 data: fileBuffer,
-                config: { 
-                    marginSize: parseInt(marginSlider.value),
-                    side: currentSide
-                } 
+                config: config
             });
         };
 

@@ -1,6 +1,5 @@
 /**
  * worker.js - Handles PDF processing using PDFium WASM
- * Focused core processing only.
  */
 
 self.Module = {
@@ -60,27 +59,85 @@ const initPdfium = async () => {
     throw new Error("No PDFium module found.");
 };
 
-const applyMarginsRaw = (pdfium, page, marginSize, side, pageIndex) => {
+const applyMarginsRaw = (pdfium, page, config, pageIndex) => {
     const getMediaBox = pdfium.FPDFPage_GetMediaBox || pdfium._FPDFPage_GetMediaBox;
     const setMediaBox = pdfium.FPDFPage_SetMediaBox || pdfium._FPDFPage_SetMediaBox;
     const setCropBox = pdfium.FPDFPage_SetCropBox || pdfium._FPDFPage_SetCropBox;
+    const getBoundingBox = pdfium.FPDF_GetPageBoundingBox || pdfium._FPDF_GetPageBoundingBox;
 
     const floatPtrs = pdfium._malloc(16);
     const success = getMediaBox(page, floatPtrs, floatPtrs + 4, floatPtrs + 8, floatPtrs + 12);
     
     if (success) {
         const heapF32 = getHeap(pdfium, 'HEAPF32');
-        const L = heapF32[floatPtrs >> 2];
-        const B = heapF32[(floatPtrs + 4) >> 2];
-        const R = heapF32[(floatPtrs + 8) >> 2];
-        const T = heapF32[(floatPtrs + 12) >> 2];
+        let L = heapF32[floatPtrs >> 2];
+        let B = heapF32[(floatPtrs + 4) >> 2];
+        let R = heapF32[(floatPtrs + 8) >> 2];
+        let T = heapF32[(floatPtrs + 12) >> 2];
 
-        const applyRight = (side === 'right') || (side === 'alternating' && pageIndex % 2 === 0);
-        const newL = applyRight ? L : L - marginSize;
-        const newR = applyRight ? R + marginSize : R;
+        let newL, newR, newB, newT;
 
-        setMediaBox(page, newL, B, newR, T);
-        if (setCropBox) setCropBox(page, newL, B, newR, T);
+        if (config.tablet) {
+            // Tablet Optimization Mode
+            
+            // Try to get actual content bounding box to remove original whitespace
+            if (getBoundingBox) {
+                const successBox = getBoundingBox(page, floatPtrs);
+                if (successBox) {
+                    const cL = heapF32[floatPtrs >> 2];
+                    const cT = heapF32[(floatPtrs + 4) >> 2]; // Struct FS_RECTF: left, top, right, bottom
+                    const cR = heapF32[(floatPtrs + 8) >> 2];
+                    const cB = heapF32[(floatPtrs + 12) >> 2];
+                    
+                    // Sanity check: ensure content box is valid
+                    if (cR > cL && cT > cB) {
+                        L = cL;
+                        B = cB;
+                        R = cR;
+                        T = cT;
+                    }
+                }
+            }
+
+            const { width: wd, height: hd, epsilon = 0 } = config.tablet;
+            const hp = T - B;
+            
+            // Calculate new dimensions based on tablet aspect ratio
+            const targetRatio = wd / hd;
+            const newHeight = hp + (epsilon * 2);
+            const newWidth = newHeight * targetRatio;
+
+            // Vertical Alignment: Center content
+            newB = B - epsilon;
+            newT = T + epsilon;
+
+            // Horizontal Alignment
+            const side = config.side || 'right';
+            const applyRight = (side === 'right') || (side === 'alternating' && pageIndex % 2 === 0);
+
+            if (applyRight) {
+                // Margin on Right -> Content aligned to Left
+                // Add epsilon padding to Left so content doesn't touch bezel
+                newL = L - epsilon;
+                newR = newL + newWidth;
+            } else {
+                // Margin on Left -> Content aligned to Right
+                // Add epsilon padding to Right
+                newR = R + epsilon;
+                newL = newR - newWidth;
+            }
+        } else {
+            const marginSize = config.marginSize || 0;
+            const side = config.side || 'right';
+            newB = B;
+            newT = T;
+            const applyRight = (side === 'right') || (side === 'alternating' && pageIndex % 2 === 0);
+            newL = applyRight ? L : L - marginSize;
+            newR = applyRight ? R + marginSize : R;
+        }
+
+        setMediaBox(page, newL, newB, newR, newT);
+        if (setCropBox) setCropBox(page, newL, newB, newR, newT);
     }
 
     pdfium._free(floatPtrs);
@@ -149,7 +206,7 @@ self.onmessage = async (e) => {
             for (let i = 0; i < count; i++) {
                 const loadPage = pdfium.FPDF_LoadPage || pdfium._FPDF_LoadPage;
                 const page = loadPage(doc, i);
-                applyMarginsRaw(pdfium, page, config.marginSize, config.side, i);
+                applyMarginsRaw(pdfium, page, config, i);
                 (pdfium.FPDF_ClosePage || pdfium._FPDF_ClosePage)(page);
             }
             
