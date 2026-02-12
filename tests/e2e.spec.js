@@ -42,15 +42,26 @@ startxref
     await expect(page).toHaveTitle(/PDF Margin Enhancer/);
   });
 
-  test('should upload PDF and trigger download', async ({ page }) => {
+  test('should manage file list and trigger download', async ({ page }) => {
     await page.goto('/');
-
-    // Setup download listener
-    const downloadPromise = page.waitForEvent('download');
 
     // Upload file
     const fileInput = page.locator('input[type="file"]');
     await fileInput.setInputFiles(testPdfPath);
+
+    // Verify file is listed
+    const fileItem = page.locator('.file-item');
+    await expect(fileItem).toContainText('test.pdf');
+
+    // Remove file
+    await fileItem.locator('.remove-btn').click();
+    await expect(fileItem).not.toBeVisible();
+
+    // Re-upload for processing
+    await fileInput.setInputFiles(testPdfPath);
+
+    // Setup download listener
+    const downloadPromise = page.waitForEvent('download');
 
     // Click enhance
     const enhanceBtn = page.locator('#enhanceBtn');
