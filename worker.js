@@ -60,61 +60,124 @@ const initPdfium = async () => {
 };
 
 const getTightContentBounds = (pdfium, page, width, height, origL, origB, origR, origT) => {
-    const getPageCountObjects = pdfium.FPDFPage_CountObjects || pdfium._FPDFPage_CountObjects;
-    const getPageObject = pdfium.FPDFPage_GetObject || pdfium._FPDFPage_GetObject;
-    const getPageObjBounds = pdfium.FPDFPageObj_GetBounds || pdfium._FPDFPageObj_GetBounds;
-    const generateContent = pdfium.FPDFPage_GenerateContent || pdfium._FPDFPage_GenerateContent;
-    const floatPtrs = pdfium._malloc(16);
+    // --- CONFIGURATION ---
+    const SCALE = 1.0;       // Optimized: 1.0 is sufficient for margin detection (was 2.0)
+    const THRESHOLD = 250;   // 0-255. Pixels lighter than this are considered "white". 
+                             // 250 filters out compression noise while keeping light content.
+    // ---------------------
 
-    let minL = origR, maxR = origL, minB = origT, maxT = origB;
-    let foundContent = false;
+    // Ensure integer dimensions for the bitmap
+    const bmWidth = Math.ceil(width * SCALE);
+    const bmHeight = Math.ceil(height * SCALE);
 
-    // Flatten the page content to resolve XObjects (Forms) and ensure all elements are accessible.
-    // This fixes issues where images/figures inside XObjects were not detected.
-    if (generateContent) {
-        generateContent(page);
+    // PDFium Rendering Functions
+    const createBitmap = pdfium.FPDFBitmap_Create || pdfium._FPDFBitmap_Create;
+    const fillRect = pdfium.FPDFBitmap_FillRect || pdfium._FPDFBitmap_FillRect;
+    const renderPageBitmap = pdfium.FPDF_RenderPageBitmap || pdfium._FPDF_RenderPageBitmap;
+    const getBuffer = pdfium.FPDFBitmap_GetBuffer || pdfium._FPDFBitmap_GetBuffer;
+    const getStride = pdfium.FPDFBitmap_GetStride || pdfium._FPDFBitmap_GetStride;
+    const destroyBitmap = pdfium.FPDFBitmap_Destroy || pdfium._FPDFBitmap_Destroy;
+
+    // Safety check for rendering availability
+    if (!createBitmap || !renderPageBitmap) {
+        // Fallback if render functions aren't available (unlikely)
+        return { L: origL, B: origB, R: origR, T: origT, isEmpty: false };
     }
 
-    const heapF32 = getHeap(pdfium, 'HEAPF32');
+    // 1. Create Bitmap (Format 4 = BGRA usually)
+    const bitmap = createBitmap(bmWidth, bmHeight, 0);
 
-    if (getPageCountObjects && getPageObject && getPageObjBounds) {
-        const objCount = getPageCountObjects(page);
-        for (let i = 0; i < objCount; i++) {
-            const obj = getPageObject(page, i);
-            if (getPageObjBounds(obj, floatPtrs, floatPtrs + 4, floatPtrs + 8, floatPtrs + 12)) {
-                const objL = heapF32[floatPtrs >> 2];
-                const objB = heapF32[(floatPtrs + 4) >> 2];
-                const objR = heapF32[(floatPtrs + 8) >> 2];
-                const objT = heapF32[(floatPtrs + 12) >> 2];
+    // 2. Fill with White Background (0xFFFFFFFF) to ensure transparency doesn't look "black"
+    if (fillRect) fillRect(bitmap, 0, 0, bmWidth, bmHeight, 0xFFFFFFFF);
 
-                // Heuristic: Ignore objects that are roughly the size of the full page (background layers)
-                const tolerance = 5.0; 
-                const isFullPage = (Math.abs(objL - origL) < tolerance) &&
-                                   (Math.abs(objR - origR) < tolerance) &&
-                                   (Math.abs(objT - origT) < tolerance) &&
-                                   (Math.abs(objB - origB) < tolerance);
+    // 3. Render Page content into the bitmap
+    // Flags: 0x10 (Printing/High Quality) | 0x01 (Annotations)
+    renderPageBitmap(bitmap, page, 0, 0, bmWidth, bmHeight, 0, 0x10);
 
-                if (!isFullPage) {
-                    if (objL < minL) minL = objL;
-                    if (objR > maxR) maxR = objR;
-                    if (objB < minB) minB = objB;
-                    if (objT > maxT) maxT = objT;
-                    foundContent = true;
+    // 4. Get direct access to pixel data
+    const ptr = getBuffer(bitmap);
+    const stride = getStride(bitmap); // Number of bytes per row
+    const heapU8 = getHeap(pdfium, 'HEAPU8');
+
+    let minX = bmWidth, maxX = -1;
+    let minY = -1, maxY = -1;
+
+    // 5. Scan Pixels (Optimized)
+    
+    // A. Find Top (minY) - Scan rows from top
+    for (let y = 0; y < bmHeight; y++) {
+        const rowOffset = ptr + (y * stride);
+        for (let x = 0; x < bmWidth; x++) {
+            const px = rowOffset + (x * 4); // 4 bytes per pixel (BGRA)
+            if (heapU8[px] < THRESHOLD || heapU8[px+1] < THRESHOLD || heapU8[px+2] < THRESHOLD) {
+                minY = y;
+                break; // Found top edge, stop scanning this row and previous rows
+            }
+        }
+        if (minY !== -1) break;
+    }
+
+    // B. Find Bottom (maxY) - Scan rows from bottom
+    if (minY !== -1) {
+        for (let y = bmHeight - 1; y >= minY; y--) {
+            const rowOffset = ptr + (y * stride);
+            for (let x = 0; x < bmWidth; x++) {
+                const px = rowOffset + (x * 4);
+                if (heapU8[px] < THRESHOLD || heapU8[px+1] < THRESHOLD || heapU8[px+2] < THRESHOLD) {
+                    maxY = y;
+                    break; // Found bottom edge
+                }
+            }
+            if (maxY !== -1) break;
+        }
+
+        // C. Find Left/Right (minX, maxX) - Scan only content rows
+        for (let y = minY; y <= maxY; y++) {
+            const rowOffset = ptr + (y * stride);
+            
+            // Scan from Left (only up to current minX)
+            for (let x = 0; x < minX; x++) {
+                const px = rowOffset + (x * 4);
+                if (heapU8[px] < THRESHOLD || heapU8[px+1] < THRESHOLD || heapU8[px+2] < THRESHOLD) {
+                    minX = x;
+                    break;
+                }
+            }
+
+            // Scan from Right (only down to current maxX)
+            for (let rx = bmWidth - 1; rx > maxX; rx--) {
+                const rpx = rowOffset + (rx * 4);
+                if (heapU8[rpx] < THRESHOLD || heapU8[rpx+1] < THRESHOLD || heapU8[rpx+2] < THRESHOLD) {
+                    maxX = rx;
+                    break;
                 }
             }
         }
     }
-    
-    pdfium._free(floatPtrs);
 
-    if (foundContent) {
-        return { L: minL, B: minB, R: maxR, T: maxT, isEmpty: false };
-    } else {
-        // Return center point for empty pages
+    // 6. Cleanup Memory
+    destroyBitmap(bitmap);
+
+    // 7. Handle Empty Page
+    if (minY === -1) {
         const midX = (origL + origR) / 2;
         const midY = (origB + origT) / 2;
         return { L: midX, B: midY, R: midX, T: midY, isEmpty: true };
     }
+
+    // 8. Convert Bitmap Coordinates (Pixels) back to PDF Coordinates (Points)
+    // Note: Bitmap (0,0) is Top-Left. PDF (L,B) is typically Bottom-Left.
+    
+    // X axis (Left to Right)
+    const newL = origL + (minX / SCALE);
+    const newR = origL + ((maxX + 1) / SCALE); // +1 to capture the full pixel width
+
+    // Y axis (Top to Bottom in Bitmap -> Top to Bottom in PDF Space)
+    // origT corresponds to y=0.
+    const newT = origT - (minY / SCALE);
+    const newB = origT - ((maxY + 1) / SCALE);
+
+    return { L: newL, B: newB, R: newR, T: newT, isEmpty: false };
 };
 
 const applyMarginsRaw = (pdfium, page, config, pageIndex, overrideBounds = null, uniformDims = null) => {

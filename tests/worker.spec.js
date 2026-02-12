@@ -126,6 +126,49 @@ function createPDFWithXObject(pageSize, rect) {
     return Buffer.from(body);
 }
 
+/**
+ * Helper to generate a PDF with a specific grayscale color rectangle.
+ * colorVal: 0.0 (Black) to 1.0 (White)
+ */
+function createPDFWithColor(pageSize, rect, colorVal) {
+    const objects = [];
+    let objId = 1;
+    const catalogId = objId++;
+    const rootId = objId++;
+    const pageId = objId++;
+    const contentId = objId++;
+
+    // Set color (g = grayscale) and fill rect
+    const stream = `${colorVal} g ${rect.x} ${rect.y} ${rect.w} ${rect.h} re f`;
+
+    objects.push({ id: catalogId, content: `<< /Type /Catalog /Pages ${rootId} 0 R >>` });
+    objects.push({ id: rootId, content: `<< /Type /Pages /Kids [${pageId} 0 R] /Count 1 >>` });
+    objects.push({
+        id: pageId,
+        content: `<< /Type /Page /Parent ${rootId} 0 R /MediaBox [0 0 ${pageSize.w} ${pageSize.h}] /Contents ${contentId} 0 R /Resources << >> >>`
+    });
+    objects.push({
+        id: contentId,
+        content: `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`
+    });
+
+    let body = `%PDF-1.7\n`;
+    const xref = [`0000000000 65535 f \n`];
+    let offset = body.length;
+    objects.sort((a, b) => a.id - b.id);
+    for (const obj of objects) {
+        const entry = `${String(offset).padStart(10, '0')} 00000 n \n`;
+        xref.push(entry);
+        body += `${obj.id} 0 obj\n${obj.content}\nendobj\n`;
+        offset = body.length;
+    }
+    const xrefOffset = offset;
+    body += `xref\n0 ${objects.length + 1}\n${xref.join('')}`;
+    body += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\n`;
+    body += `startxref\n${xrefOffset}\n%%EOF`;
+    return Buffer.from(body);
+}
+
 test.describe('Worker Logic Unit Tests', () => {
     
     // Helper to run the worker in the browser context and parse results
@@ -276,5 +319,27 @@ test.describe('Worker Logic Unit Tests', () => {
         // Expect tight crop around the 200x200 content
         expect(outputSizes[0].w).toBeCloseTo(200, 1);
         expect(outputSizes[0].h).toBeCloseTo(200, 1);
+    });
+
+    test('Noise Threshold: Should ignore very faint artifacts but detect light content', async ({ page }) => {
+        await page.goto('/');
+        const pageSize = { w: 1000, h: 1000 };
+        const rect = { x: 100, y: 100, w: 200, h: 200 };
+        const config = { tablet: { width: 500, height: 500, epsilon: 0 } };
+
+        // 1. Very faint gray (0.99) -> Should be treated as white/noise (Empty Page)
+        // 0.99 * 255 = 252.45. Threshold is 250. 252 > 250, so it's "white".
+        const pdfFaint = createPDFWithColor(pageSize, rect, 0.99);
+        const outputFaint = await processPdfInWorker(page, pdfFaint, config);
+        // Empty page returns center point, so width/height should be 0 or minimal
+        // Actually, logic returns isEmpty: true, so contentW=0, contentH=0.
+        // Base Page 500x500.
+        expect(outputFaint[0].w).toBeCloseTo(500, 1);
+
+        // 2. Light gray (0.90) -> Should be detected
+        // 0.90 * 255 = 229.5. 229 < 250, so it's "content".
+        const pdfLight = createPDFWithColor(pageSize, rect, 0.90);
+        const outputLight = await processPdfInWorker(page, pdfLight, config);
+        expect(outputLight[0].w).toBeCloseTo(200, 1);
     });
 });
