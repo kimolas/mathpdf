@@ -65,6 +65,67 @@ function createPDF(pageSizes) {
     return Buffer.from(body);
 }
 
+/**
+ * Helper to generate a PDF with a Form XObject containing content.
+ * Used to test flattening/content detection logic.
+ */
+function createPDFWithXObject(pageSize, rect) {
+    const objects = [];
+    let objId = 1;
+    
+    const catalogId = objId++;
+    const rootId = objId++;
+    const pageId = objId++;
+    const xobjectId = objId++;
+    const contentId = objId++;
+    
+    // Draw rectangle inside XObject
+    const xobjStream = `${rect.x} ${rect.y} ${rect.w} ${rect.h} re f`;
+    
+    // Draw XObject on Page
+    const pageStream = `/F1 Do`;
+    
+    objects.push({ id: catalogId, content: `<< /Type /Catalog /Pages ${rootId} 0 R >>` });
+    objects.push({ id: rootId, content: `<< /Type /Pages /Kids [${pageId} 0 R] /Count 1 >>` });
+    
+    objects.push({
+        id: pageId,
+        content: `<< /Type /Page /Parent ${rootId} 0 R /MediaBox [0 0 ${pageSize.w} ${pageSize.h}] /Contents ${contentId} 0 R /Resources << /XObject << /F1 ${xobjectId} 0 R >> >> >>`
+    });
+
+    // Note: BBox is set to full page size to verify that we detect the *actual* content (rect) 
+    // inside the form, not just the form's bounding box.
+    objects.push({
+        id: xobjectId,
+        content: `<< /Type /XObject /Subtype /Form /BBox [0 0 ${pageSize.w} ${pageSize.h}] /Length ${xobjStream.length} >>\nstream\n${xobjStream}\nendstream`
+    });
+
+    objects.push({
+        id: contentId,
+        content: `<< /Length ${pageStream.length} >>\nstream\n${pageStream}\nendstream`
+    });
+
+    let body = `%PDF-1.7\n`;
+    const xref = [`0000000000 65535 f \n`];
+    let offset = body.length;
+    
+    objects.sort((a, b) => a.id - b.id);
+    
+    for (const obj of objects) {
+        const entry = `${String(offset).padStart(10, '0')} 00000 n \n`;
+        xref.push(entry);
+        body += `${obj.id} 0 obj\n${obj.content}\nendobj\n`;
+        offset = body.length;
+    }
+    
+    const xrefOffset = offset;
+    body += `xref\n0 ${objects.length + 1}\n${xref.join('')}`;
+    body += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\n`;
+    body += `startxref\n${xrefOffset}\n%%EOF`;
+    
+    return Buffer.from(body);
+}
+
 test.describe('Worker Logic Unit Tests', () => {
     
     // Helper to run the worker in the browser context and parse results
@@ -189,5 +250,28 @@ test.describe('Worker Logic Unit Tests', () => {
 
         const outputSizes = await processPdfInWorker(page, pdfData, config);
         expect(outputSizes.length).toBe(1000);
+    });
+
+    test('XObject Handling: Should detect content inside Form XObjects', async ({ page }) => {
+        await page.goto('/');
+
+        // Page 1000x1000.
+        // XObject contains a rect at 100,100 200x200 (so ends at 300,300).
+        // The XObject itself has a BBox of [0 0 1000 1000].
+        // If flattening works, we detect the rect [100, 100, 300, 300].
+        // If flattening fails, we likely detect the Form BBox [0, 0, 1000, 1000].
+        
+        const pageSize = { w: 1000, h: 1000 };
+        const rect = { x: 100, y: 100, w: 200, h: 200 }; 
+        
+        const pdfData = createPDFWithXObject(pageSize, rect);
+        const config = { tablet: { width: 500, height: 500, epsilon: 0 } };
+
+        const outputSizes = await processPdfInWorker(page, pdfData, config);
+
+        expect(outputSizes.length).toBe(1);
+        // Expect tight crop around the 200x200 content
+        expect(outputSizes[0].w).toBeCloseTo(200, 1);
+        expect(outputSizes[0].h).toBeCloseTo(200, 1);
     });
 });

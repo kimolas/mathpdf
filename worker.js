@@ -63,11 +63,18 @@ const getTightContentBounds = (pdfium, page, width, height, origL, origB, origR,
     const getPageCountObjects = pdfium.FPDFPage_CountObjects || pdfium._FPDFPage_CountObjects;
     const getPageObject = pdfium.FPDFPage_GetObject || pdfium._FPDFPage_GetObject;
     const getPageObjBounds = pdfium.FPDFPageObj_GetBounds || pdfium._FPDFPageObj_GetBounds;
+    const generateContent = pdfium.FPDFPage_GenerateContent || pdfium._FPDFPage_GenerateContent;
     const floatPtrs = pdfium._malloc(16);
     const heapF32 = getHeap(pdfium, 'HEAPF32');
 
     let minL = origR, maxR = origL, minB = origT, maxT = origB;
     let foundContent = false;
+
+    // Flatten the page content to resolve XObjects (Forms) and ensure all elements are accessible.
+    // This fixes issues where images/figures inside XObjects were not detected.
+    if (generateContent) {
+        generateContent(page);
+    }
 
     if (getPageCountObjects && getPageObject && getPageObjBounds) {
         const objCount = getPageCountObjects(page);
@@ -270,7 +277,7 @@ self.onmessage = async (e) => {
         };
 
         if (type === 'PROCESS_PDF') {
-            const { doc, ptr } = loadDoc(inputData);
+            let { doc, ptr } = loadDoc(inputData);
             if (!doc) throw new Error("FPDF_LoadMemDocument failed.");
 
             const getPageCount = pdfium.FPDF_GetPageCount || pdfium._FPDF_GetPageCount;
@@ -280,6 +287,12 @@ self.onmessage = async (e) => {
                 // Two-Pass Approach for Uniformity
                 
                 // Pass 1: Analyze all pages to find content bounds
+                const pageBounds = new Array(count);
+                const loadPage = pdfium.FPDF_LoadPage || pdfium._FPDF_LoadPage;
+                const closePage = pdfium.FPDF_ClosePage || pdfium._FPDF_ClosePage;
+                const getMediaBox = pdfium.FPDFPage_GetMediaBox || pdfium._FPDFPage_GetMediaBox;
+                const floatPtrs = pdfium._malloc(16);
+                // Pass 1: Analyze all pages using docAna
                 const pageBounds = new Array(count);
                 const loadPage = pdfium.FPDF_LoadPage || pdfium._FPDF_LoadPage;
                 const closePage = pdfium.FPDF_ClosePage || pdfium._FPDF_ClosePage;
@@ -303,6 +316,10 @@ self.onmessage = async (e) => {
                     closePage(page);
                 }
                 pdfium._free(floatPtrs);
+
+                // Close Analysis Doc immediately
+                (pdfium.FPDF_CloseDocument || pdfium._FPDF_CloseDocument)(docAna);
+                pdfium._free(ptrAna);
 
                 // Calculate Typical Dimensions (Median Height)
                 const contentHeights = pageBounds

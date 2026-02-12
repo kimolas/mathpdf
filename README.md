@@ -12,6 +12,7 @@ A client-side web application that processes PDFs to add wide margins for note-t
   * **Tablet Match:** Optimizes margins for specific devices (Kindle Scribe, reMarkable 2, iPad Pro, Boox, Supernote, Samsung Galaxy Tab).
   * **Fixed Margins:** Manually adjust margin size (1" to 5").
   * **Justification:** Right, Left, or Alternating (Outer margins for double-sided printing).
+  * **Robust Content Detection:** Accurately identifies bounding boxes for text, images, and vector graphics, even within nested structures (XObjects/Forms).
 * **Modern UI:**
   * Drag-and-drop interface.
   * Dark mode support (respects system preference).
