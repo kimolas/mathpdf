@@ -709,15 +709,9 @@
                     }
                 }
 
-                resetUI();
                 // Check if we can share (Single file + Browser support)
-                let canShare = false;
-                if (lastResult && navigator.share && navigator.canShare) {
-                    try {
-                        const file = new File([lastResult.data], lastResult.name, { type: 'application/pdf' });
-                        if (navigator.canShare({ files: [file] })) canShare = true;
-                    } catch (e) { console.log('Share check failed', e); }
-                }
+                const hasShare = navigator.share && typeof navigator.share === 'function';
+                const canShare = lastResult && hasShare;
 
                 if (canShare) {
                     // Pause in "Finished" state to allow sharing
@@ -730,6 +724,13 @@
                     isFinished = true;
                     addLog('Tip: Use "Share to Kindle" to send to your device.');
                 } else {
+                    if (lastResult) {
+                        if (!window.isSecureContext) {
+                            addLog('Note: "Share" hidden. Requires HTTPS or localhost.', true);
+                        } else if (!hasShare) {
+                            addLog('Note: Web Share API not available.', true);
+                        }
+                    }
                     resetUI();
                 }
             } else {
@@ -783,6 +784,11 @@
             if (!lastResult) return;
             try {
                 const file = new File([lastResult.data], lastResult.name, { type: 'application/pdf' });
+                
+                if (navigator.canShare && !navigator.canShare({ files: [file] })) {
+                    addLog('Warning: Browser reports it cannot share this file. Trying anyway...', true);
+                }
+
                 await navigator.share({
                     files: [file],
                     title: 'Enhanced PDF',
