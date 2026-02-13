@@ -81,6 +81,11 @@
         <!-- File List Container -->
         <div id="fileList" class="mb-6 space-y-2 max-h-48 overflow-y-auto"></div>
 
+        <!-- Settings Preview Icon -->
+        <div id="previewContainer" class="flex flex-col items-center mb-6 transition-all duration-500 transform">
+            <!-- SVG will be injected here -->
+        </div>
+
         <div id="configSection" class="mb-8 space-y-5 opacity-50 pointer-events-none transition-opacity duration-300">
             <!-- Mode Switcher -->
             <div class="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl flex relative transition-colors">
@@ -236,6 +241,7 @@
         const customWidthInput = document.getElementById('customWidth');
         const customHeightInput = document.getElementById('customHeight');
         const resetDefaultsBtn = document.getElementById('resetDefaultsBtn');
+        const previewContainer = document.getElementById('previewContainer');
 
         let processQueue = [];
         const maxWorkers = navigator.hardwareConcurrency || 4;
@@ -253,6 +259,108 @@
             'left': 'Adds space on the left side of every page.',
             'alternating': 'Outer margins (Right on odd, Left on even).'
         };
+
+        function updatePreview() {
+            const isDark = html.classList.contains('dark');
+            const strokeColor = isDark ? '#475569' : '#cbd5e1';
+            const contentColor = '#3b82f6';
+            const bgColor = isDark ? '#1e293b' : '#f8fafc';
+            
+            let frameW = 70;
+            let frameH = 90;
+            let contentW = 40;
+            let contentH = 60;
+            let contentX = 10;
+            let contentY = 15;
+
+            if (currentMode === 'tablet') {
+                const tw = parseInt(customWidthInput.value) || 2480;
+                const th = parseInt(customHeightInput.value) || 1860;
+                const eps = parseInt(epsilonSlider.value) || 0;
+                
+                const ratio = th / tw;
+                frameW = 80;
+                frameH = 80 * ratio;
+                
+                const vPad = (eps / 72) * 12; 
+                contentH = frameH - (vPad * 2) - 12;
+                contentY = vPad + 6;
+                
+                contentW = 45; 
+                if (currentSide === 'right') contentX = 6;
+                else if (currentSide === 'left') contentX = frameW - contentW - 6;
+                else contentX = 6; 
+            } else {
+                const mSize = parseInt(marginSlider.value) || 0;
+                const hPad = (mSize / 72) * 10;
+                frameW = 60 + hPad;
+                contentW = 50;
+                if (currentSide === 'right') contentX = 6;
+                else if (currentSide === 'left') contentX = frameW - contentW - 6;
+                else contentX = 6;
+            }
+
+            const isAlternating = currentSide === 'alternating';
+            const centerX = 120;
+            const centerY = 60;
+
+            let svgContent = '';
+            
+            if (isAlternating) {
+                const spread = 25;
+                // Even Page (Back) - Content on Right
+                const evenX = centerX - frameW - spread/2 + 10;
+                const evenY = centerY - frameH/2;
+                const evenContentX = frameW - contentW - 5;
+                
+                svgContent += `
+                    <g>
+                        <rect x="${evenX}" y="${evenY}" width="${frameW}" height="${frameH}" rx="3" fill="${bgColor}" stroke="${strokeColor}" stroke-width="1"/>
+                        <rect x="${evenX + evenContentX}" y="${evenY + contentY}" width="${contentW}" height="${contentH}" rx="1" fill="${contentColor}" fill-opacity="0.8">
+                            <animate attributeName="fill-opacity" values="0.6;0.9;0.6" dur="3s" repeatCount="indefinite" />
+                        </rect>
+                        <text x="${evenX + frameW/2}" y="${evenY + frameH + 15}" text-anchor="middle" fill="${strokeColor}" font-size="8" font-weight="bold" style="fill: ${strokeColor}">EVEN (2, 4...)</text>
+                    </g>
+                `;
+
+                // Odd Page (Front) - Content on Left
+                const oddX = centerX + spread/2 - 10;
+                const oddY = centerY - frameH/2;
+                const oddContentX = 5;
+
+                svgContent += `
+                    <rect x="${oddX}" y="${oddY}" width="${frameW}" height="${frameH}" rx="3" fill="${bgColor}" stroke="${strokeColor}" stroke-width="1.5"/>
+                    <rect x="${oddX + oddContentX}" y="${oddY + contentY}" width="${contentW}" height="${contentH}" rx="1" fill="${contentColor}" fill-opacity="0.8">
+                        <animate attributeName="fill-opacity" values="0.6;0.9;0.6" dur="3s" repeatCount="indefinite" />
+                    </rect>
+                    <line x1="${oddX + oddContentX + 6}" y1="${oddY + contentY + 8}" x2="${oddX + oddContentX + contentW - 6}" y2="${oddY + contentY + 8}" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+                    <line x1="${oddX + oddContentX + 6}" y1="${oddY + contentY + 14}" x2="${oddX + oddContentX + contentW - 12}" y2="${oddY + contentY + 14}" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+                    <text x="${oddX + frameW/2}" y="${oddY + frameH + 15}" text-anchor="middle" fill="${contentColor}" font-size="8" font-weight="bold" style="fill: ${contentColor}">ODD (1, 3...)</text>
+                `;
+            } else {
+                const mainX = centerX - frameW/2;
+                const mainY = centerY - frameH/2;
+
+                svgContent += `
+                    <rect x="${mainX}" y="${mainY}" width="${frameW}" height="${frameH}" rx="3" fill="${bgColor}" stroke="${strokeColor}" stroke-width="1.5"/>
+                    <rect x="${mainX + contentX}" y="${mainY + contentY}" width="${contentW}" height="${contentH}" rx="1" fill="${contentColor}" fill-opacity="0.8">
+                        <animate attributeName="fill-opacity" values="0.6;0.9;0.6" dur="3s" repeatCount="indefinite" />
+                    </rect>
+                    <line x1="${mainX + contentX + 6}" y1="${mainY + contentY + 8}" x2="${mainX + contentX + contentW - 6}" y2="${mainY + contentY + 8}" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+                    <line x1="${mainX + contentX + 6}" y1="${mainY + contentY + 14}" x2="${mainX + contentX + contentW - 12}" y2="${mainY + contentY + 14}" stroke="white" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+                    <text x="${mainX + frameW/2}" y="${mainY + frameH + 15}" text-anchor="middle" fill="${contentColor}" font-size="8" font-weight="bold" style="fill: ${contentColor}">ALL PAGES</text>
+                `;
+            }
+
+            previewContainer.innerHTML = `
+                <span class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4">Settings Preview</span>
+                <div class="relative">
+                    <svg width="240" height="140" viewBox="0 0 240 140" fill="none" xmlns="http://www.w3.org/2000/svg" class="drop-shadow-md">
+                        ${svgContent}
+                    </svg>
+                </div>
+            `;
+        }
 
         function addLog(msg, isError = false) {
             const div = document.createElement('div');
@@ -290,12 +398,14 @@
             } else {
                 setMode('tablet'); // Default if no settings
             }
+            updatePreview();
         }
 
         marginSlider.oninput = (e) => {
             const pts = parseInt(e.target.value);
             const inches = (pts / 72).toFixed(1);
             marginValue.textContent = `${inches}"`;
+            updatePreview();
             saveSettings();
         };
 
@@ -303,6 +413,7 @@
             const pts = parseInt(e.target.value);
             const inches = (pts / 72).toFixed(2);
             epsilonValue.textContent = `${inches}"`;
+            updatePreview();
             saveSettings();
         };
 
@@ -326,6 +437,7 @@
                 fixedControls.classList.remove('hidden');
                 tabletControls.classList.add('hidden');
             }
+            updatePreview();
             saveSettings();
         }
 
@@ -339,12 +451,13 @@
                 customWidthInput.value = w;
                 customHeightInput.value = h;
             }
+            updatePreview();
             saveSettings();
         };
 
         // Auto-select custom if user types
         [customWidthInput, customHeightInput].forEach(input => {
-            input.oninput = () => deviceSelect.value = 'custom';
+            input.oninput = () => { deviceSelect.value = 'custom'; updatePreview(); };
             input.onchange = () => saveSettings();
         });
 
@@ -358,6 +471,7 @@
                 btn.classList.add('ring-2', 'ring-blue-500', 'ring-offset-1', 'bg-blue-50', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300', 'border-blue-200', 'dark:border-blue-800');
                 currentSide = btn.dataset.value;
                 sideDesc.textContent = sideDescriptions[currentSide];
+                updatePreview();
                 saveSettings();
             };
         });
@@ -375,6 +489,7 @@
             deviceSelect.dispatchEvent(new Event('change'));
             
             document.querySelector('.side-btn[data-value="right"]')?.click();
+            updatePreview();
             addLog('Settings reset to defaults.');
         };
 
