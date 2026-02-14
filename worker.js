@@ -476,11 +476,18 @@ self.onmessage = async (e) => {
                         const contentW = bounds.isEmpty ? 0 : bounds.R - bounds.L;
 
                         // 1. Height: At least base height, but expand for long content (outliers)
-                        const pageHeight = Math.max(basePageHeight, contentH + (epsilon * 2));
+                        let pageHeight = Math.max(basePageHeight, contentH + (epsilon * 2));
                         
                         // 2. Width: Fixed to base width to ensure uniform zoom/font size, 
                         // unless content is wider than the target width
                         const pageWidth = Math.max(basePageWidth, contentW + (epsilon * 2));
+
+                        // 3. Aspect Ratio Correction:
+                        // If the page is wider than the target ratio (relative to height), 
+                        // expand height to maintain the ratio. This prevents side cropping.
+                        if (pageWidth / pageHeight > targetRatio) {
+                            pageHeight = pageWidth / targetRatio;
+                        }
 
                         const dims = { width: pageWidth, height: pageHeight };
 

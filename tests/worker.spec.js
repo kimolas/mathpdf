@@ -203,7 +203,12 @@ test.describe('Worker Logic Unit Tests', () => {
                 config: config 
             });
 
-            const result = await resultPromise;
+            let result;
+            try {
+                result = await resultPromise;
+            } finally {
+                worker.terminate();
+            }
             
             // Parse MediaBoxes from result PDF string using Regex
             const str = new TextDecoder('latin1').decode(result);
@@ -278,12 +283,33 @@ test.describe('Worker Logic Unit Tests', () => {
         expect(smallPages.length).toBe(10);
 
         // 2. Body Pages (20): Height 780. Width expands to 580 (Content Width).
-        const bodyPages = outputSizes.filter(p => Math.abs(p.w - 580) < 1 && Math.abs(p.h - 780) < 1);
+        // Aspect Ratio Correction: 580 / 780 = 0.74 > 0.5 (Target).
+        // Height expands to 580 / 0.5 = 1160 to maintain ratio.
+        const bodyPages = outputSizes.filter(p => Math.abs(p.w - 580) < 1 && Math.abs(p.h - 1160) < 1);
         expect(bodyPages.length).toBe(20);
 
         // 3. Long Pages (5): Width 580. Height expands to 2980.
         const longPages = outputSizes.filter(p => Math.abs(p.w - 580) < 5 && Math.abs(p.h - 2980) < 5);
         expect(longPages.length).toBe(5);
+    });
+
+    test('Aspect Ratio: Should strictly match target device ratio', async ({ page }) => {
+        await page.goto('/');
+
+        // Kindle Scribe Ratio: 2480 / 1860 = 1.3333...
+        const targetW = 2480;
+        const targetH = 1860;
+        const targetRatio = targetW / targetH;
+
+        const inputSizes = [{ w: 600, h: 800 }];
+        const pdfData = createPDF(inputSizes);
+        const config = { tablet: { width: targetW, height: targetH, epsilon: 0 } };
+
+        const outputSizes = await processPdfInWorker(page, pdfData, config);
+        const outputRatio = outputSizes[0].w / outputSizes[0].h;
+
+        // Verify ratio matches target within strict tolerance (0.001)
+        expect(Math.abs(outputRatio - targetRatio)).toBeLessThan(0.001);
     });
 
     test('Stress Test: 1000 Pages', async ({ page }) => {
@@ -296,6 +322,112 @@ test.describe('Worker Logic Unit Tests', () => {
 
         const outputSizes = await processPdfInWorker(page, pdfData, config);
         expect(outputSizes.length).toBe(1000);
+    });
+
+    test('Randomized Input: Should handle variable page sizes and content', async ({ page }) => {
+        await page.goto('/');
+        
+        // Generate 5-20 pages
+        const numPages = Math.floor(Math.random() * 15) + 5;
+        const inputSizes = [];
+        
+        for (let i = 0; i < numPages; i++) {
+            // Random dimensions between 200 and 1000
+            const w = Math.floor(Math.random() * 800) + 200;
+            const h = Math.floor(Math.random() * 800) + 200;
+            inputSizes.push({ w, h });
+        }
+
+        const pdfData = createPDF(inputSizes);
+        const config = { tablet: { width: 1000, height: 1400, epsilon: 5 } };
+
+        const outputSizes = await processPdfInWorker(page, pdfData, config);
+        
+        expect(outputSizes.length).toBe(numPages);
+        outputSizes.forEach(size => {
+            expect(size.w).toBeGreaterThan(0);
+            expect(size.h).toBeGreaterThan(0);
+            expect(Number.isFinite(size.w)).toBe(true);
+            expect(Number.isFinite(size.h)).toBe(true);
+        });
+    });
+
+    test('Randomized Stress Test: Verify Aspect Ratios and Dimensions', async ({ page }) => {
+        test.setTimeout(120000); // Increase timeout for multiple runs
+        await page.goto('/');
+
+        const numRuns = 20; 
+
+        for (let run = 0; run < numRuns; run++) {
+            const numPages = Math.floor(Math.random() * 10) + 3; // At least 3 pages for median calculation
+            const inputSizes = [];
+            
+            // Generate random page sizes
+            for (let j = 0; j < numPages; j++) {
+                // Mix of shapes
+                const shape = Math.random();
+                let w, h;
+                if (shape < 0.1) { // Long page (web capture)
+                    w = 600;
+                    h = 2000 + Math.random() * 1000;
+                } else if (shape < 0.2) { // Wide page (slide)
+                    w = 1000 + Math.random() * 500;
+                    h = 600;
+                } else { // Normalish
+                    w = 300 + Math.random() * 500;
+                    h = 300 + Math.random() * 500;
+                }
+                inputSizes.push({ w: Math.floor(w), h: Math.floor(h) });
+            }
+
+            const pdfData = createPDF(inputSizes);
+            
+            // Random target config
+            const targetW = 1000 + Math.floor(Math.random() * 1000);
+            const targetH = 1000 + Math.floor(Math.random() * 1000);
+            const epsilon = Math.floor(Math.random() * 20);
+            const config = { tablet: { width: targetW, height: targetH, epsilon: epsilon } };
+            const targetRatio = targetW / targetH;
+
+            const outputSizes = await processPdfInWorker(page, pdfData, config);
+            
+            // Verification Logic
+            const contentSizes = inputSizes.map(s => ({ w: s.w - 20, h: s.h - 20 }));
+            const heights = contentSizes.map(s => s.h).sort((a, b) => a - b);
+            const mid = Math.floor(heights.length / 2);
+            const typicalContentHeight = heights[mid];
+            
+            let effectiveEpsilon = epsilon;
+            if (typicalContentHeight > 200 && epsilon > 0 && epsilon < 5) {
+                effectiveEpsilon = epsilon * 72;
+            }
+
+            const basePageHeight = typicalContentHeight + (effectiveEpsilon * 2);
+            const basePageWidth = basePageHeight * targetRatio;
+
+            expect(outputSizes.length).toBe(numPages);
+            
+            for (let i = 0; i < numPages; i++) {
+                const contentH = contentSizes[i].h;
+                const contentW = contentSizes[i].w;
+                
+                let expectedH = Math.max(basePageHeight, contentH + (effectiveEpsilon * 2));
+                let expectedW = Math.max(basePageWidth, contentW + (effectiveEpsilon * 2));
+                
+                // Aspect Ratio Correction
+                if (expectedW / expectedH > targetRatio) {
+                    expectedH = expectedW / targetRatio;
+                }
+                
+                const tolerance = 5.0; // Allow for PDFium rasterization/rounding differences
+
+                expect(Math.abs(outputSizes[i].w - expectedW)).toBeLessThan(tolerance);
+                expect(Math.abs(outputSizes[i].h - expectedH)).toBeLessThan(tolerance);
+                
+                const actualRatio = outputSizes[i].w / outputSizes[i].h;
+                expect(actualRatio).toBeLessThanOrEqual(targetRatio + 0.002);
+            }
+        }
     });
 
     test('XObject Handling: Should detect content inside Form XObjects', async ({ page }) => {
