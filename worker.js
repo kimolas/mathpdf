@@ -296,15 +296,21 @@ const applyMarginsRaw = (pdfium, page, config, pageIndex, floatPtrs, overrideBou
             const side = config.side || 'right';
             const applyRight = (side === 'right') || (side === 'alternating' && pageIndex % 2 === 0);
 
+            // Calculate excess width to determine if we can add a safety margin
+            // even if epsilon is 0 (prevent content from touching bezel)
+            const contentWidth = R - L;
+            const excessWidth = Math.max(0, newWidth - contentWidth);
+            const bezelPadding = Math.max(epsilon, excessWidth * 0.05);
+
             if (applyRight) {
                 // Margin on Right -> Content aligned to Left
-                // Add epsilon padding to Left so content doesn't touch bezel
-                newL = L - epsilon;
+                // Add padding to Left so content doesn't touch bezel
+                newL = L - bezelPadding;
                 newR = newL + newWidth;
             } else {
                 // Margin on Left -> Content aligned to Right
-                // Add epsilon padding to Right
-                newR = R + epsilon;
+                // Add padding to Right
+                newR = R + bezelPadding;
                 newL = newR - newWidth;
             }
         } else {
@@ -480,13 +486,15 @@ self.onmessage = async (e) => {
                         
                         // 2. Width: Fixed to base width to ensure uniform zoom/font size, 
                         // unless content is wider than the target width
-                        const pageWidth = Math.max(basePageWidth, contentW + (epsilon * 2));
+                        let pageWidth = Math.max(basePageWidth, contentW + (epsilon * 2));
 
                         // 3. Aspect Ratio Correction:
-                        // If the page is wider than the target ratio (relative to height), 
-                        // expand height to maintain the ratio. This prevents side cropping.
-                        if (pageWidth / pageHeight > targetRatio) {
-                            pageHeight = pageWidth / targetRatio;
+                        // Kindle Scribe fits to width.
+                        // If page is too tall (Ratio < Target), it will crop vertically/scroll.
+                        // We must expand width to match target ratio.
+                        // If page is too wide (Ratio > Target), it fits fine (letterboxed), so we leave it.
+                        if (pageWidth / pageHeight < targetRatio) {
+                            pageWidth = pageHeight * targetRatio;
                         }
 
                         const dims = { width: pageWidth, height: pageHeight };

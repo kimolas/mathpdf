@@ -223,6 +223,8 @@ test.describe('Worker Logic Unit Tests', () => {
                     const mbMatch = /\/MediaBox\s*\[\s*([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s+([-\d\.]+)\s*\]/.exec(objStr);
                     if (mbMatch) {
                         mediaBoxes.push({
+                            x: parseFloat(mbMatch[1]),
+                            y: parseFloat(mbMatch[2]),
                             w: parseFloat(mbMatch[3]) - parseFloat(mbMatch[1]),
                             h: parseFloat(mbMatch[4]) - parseFloat(mbMatch[2])
                         });
@@ -254,8 +256,9 @@ test.describe('Worker Logic Unit Tests', () => {
         expect(outputSizes[0].w).toBeCloseTo(780, 0);
         expect(outputSizes[0].h).toBeCloseTo(780, 0);
 
-        // Page 2: Width clamped to 780, Height expanded to 2980
-        expect(outputSizes[1].w).toBeCloseTo(780, 0);
+        // Page 2: Long Page (2980h). Target Ratio 1.0.
+        // Too Tall (Ratio < 1.0). Width expands to match height (2980) to prevent scrolling.
+        expect(outputSizes[1].w).toBeCloseTo(2980, -1);
         expect(outputSizes[1].h).toBeCloseTo(2980, -1);
     });
 
@@ -283,33 +286,42 @@ test.describe('Worker Logic Unit Tests', () => {
         expect(smallPages.length).toBe(10);
 
         // 2. Body Pages (20): Height 780. Width expands to 580 (Content Width).
-        // Aspect Ratio Correction: 580 / 780 = 0.74 > 0.5 (Target).
-        // Height expands to 580 / 0.5 = 1160 to maintain ratio.
-        const bodyPages = outputSizes.filter(p => Math.abs(p.w - 580) < 1 && Math.abs(p.h - 1160) < 1);
+        // Ratio: 580 / 780 = 0.74 > 0.5 (Target).
+        // Too Wide -> No Correction (Fit-to-width handles it).
+        const bodyPages = outputSizes.filter(p => Math.abs(p.w - 580) < 1 && Math.abs(p.h - 780) < 1);
         expect(bodyPages.length).toBe(20);
 
-        // 3. Long Pages (5): Width 580. Height expands to 2980.
-        const longPages = outputSizes.filter(p => Math.abs(p.w - 580) < 5 && Math.abs(p.h - 2980) < 5);
+        // 3. Long Pages (5): Height 2980. Target Ratio 0.5.
+        // Too Tall (Ratio 0.19 < 0.5). Width expands to 2980 * 0.5 = 1490.
+        const longPages = outputSizes.filter(p => Math.abs(p.w - 1490) < 5 && Math.abs(p.h - 2980) < 5);
         expect(longPages.length).toBe(5);
     });
 
-    test('Aspect Ratio: Should strictly match target device ratio', async ({ page }) => {
+    test('Aspect Ratio: Should ensure pages are not too tall, but allow too wide', async ({ page }) => {
         await page.goto('/');
 
-        // Kindle Scribe Ratio: 2480 / 1860 = 1.3333...
-        const targetW = 2480;
-        const targetH = 1860;
-        const targetRatio = targetW / targetH;
+        const targetW = 1000;
+        const targetH = 1000;
+        const targetRatio = 1.0;
 
-        const inputSizes = [{ w: 600, h: 800 }];
+        // 1. Too Tall: 500x800. Ratio 0.625 < 1.0. Should expand Width.
+        // 2. Too Wide: 800x500. Ratio 1.6 > 1.0. Should remain Wide.
+        // 3. Small: 100x100. Ensures median height is low (480) so Page 2 is treated as "Wide" relative to base.
+        const inputSizes = [{ w: 500, h: 800 }, { w: 800, h: 500 }, { w: 100, h: 100 }];
         const pdfData = createPDF(inputSizes);
         const config = { tablet: { width: targetW, height: targetH, epsilon: 0 } };
 
         const outputSizes = await processPdfInWorker(page, pdfData, config);
-        const outputRatio = outputSizes[0].w / outputSizes[0].h;
 
-        // Verify ratio matches target within strict tolerance (0.001)
-        expect(Math.abs(outputRatio - targetRatio)).toBeLessThan(0.001);
+        // Page 1: Tall -> Expanded Width to match ratio
+        expect(outputSizes[0].w).toBeCloseTo(outputSizes[0].h * targetRatio, 1);
+        expect(Math.abs((outputSizes[0].w / outputSizes[0].h) - targetRatio)).toBeLessThan(0.001);
+
+        // Page 2: Wide -> Remains Wide (Height not expanded)
+        // Content 780x480. Base Height ~480. Width 780.
+        // If we forced ratio, Height would be 780.
+        // We expect Height to be close to content height (plus epsilon/base), not expanded.
+        expect(outputSizes[1].w).toBeGreaterThan(outputSizes[1].h * targetRatio);
     });
 
     test('Stress Test: 1000 Pages', async ({ page }) => {
@@ -415,8 +427,9 @@ test.describe('Worker Logic Unit Tests', () => {
                 let expectedW = Math.max(basePageWidth, contentW + (effectiveEpsilon * 2));
                 
                 // Aspect Ratio Correction
-                if (expectedW / expectedH > targetRatio) {
-                    expectedH = expectedW / targetRatio;
+                // Only correct if too tall
+                if (expectedW / expectedH < targetRatio) {
+                    expectedW = expectedH * targetRatio;
                 }
                 
                 const tolerance = 5.0; // Allow for PDFium rasterization/rounding differences
@@ -425,9 +438,60 @@ test.describe('Worker Logic Unit Tests', () => {
                 expect(Math.abs(outputSizes[i].h - expectedH)).toBeLessThan(tolerance);
                 
                 const actualRatio = outputSizes[i].w / outputSizes[i].h;
-                expect(actualRatio).toBeLessThanOrEqual(targetRatio + 0.002);
+                // Ratio should be >= Target Ratio (within tolerance)
+                expect(actualRatio).toBeGreaterThanOrEqual(targetRatio - 0.002);
             }
         }
+    });
+
+    test('Padding (Epsilon): Should be included in dimension calculations and preserve aspect ratio', async ({ page }) => {
+        await page.goto('/');
+
+        // 1. Standard Page: 500x500 content. Epsilon 50.
+        // 2. Wide Page: 800x500 content. Epsilon 50.
+        const inputSizes = [{ w: 520, h: 520 }, { w: 820, h: 520 }];
+        const pdfData = createPDF(inputSizes);
+
+        // Target: 1:1 Ratio
+        const config = { tablet: { width: 1000, height: 1000, epsilon: 50 } };
+
+        const outputSizes = await processPdfInWorker(page, pdfData, config);
+
+        // Page 1: Content 500x500.
+        // Base Height = 500 + (50*2) = 600.
+        // Base Width = 600 * 1.0 = 600.
+        expect(Math.abs(outputSizes[0].w - 600)).toBeLessThan(2.5);
+        expect(Math.abs(outputSizes[0].h - 600)).toBeLessThan(2.5);
+
+        // Page 2: Content 800x500.
+        // Width = 800 + 100 = 900.
+        // Height (initial) = 600.
+        // Ratio 900/600 = 1.5 > 1.0.
+        // New Logic: Allow wide pages (Fit-to-width). Height remains 600.
+        expect(Math.abs(outputSizes[1].w - 900)).toBeLessThan(2.5);
+        expect(Math.abs(outputSizes[1].h - 600)).toBeLessThan(2.5);
+    });
+
+    test('Zero Vertical Padding: Should still provide horizontal safety margin if space allows', async ({ page }) => {
+        await page.goto('/');
+
+        // Input: 500x800. Content is drawn at x=10 (margin=10 in createPDF).
+        // Target: 1000x1000 (Ratio 1.0). Epsilon 0.
+        const inputSizes = [{ w: 500, h: 800 }];
+        const pdfData = createPDF(inputSizes);
+        const config = { tablet: { width: 1000, height: 1000, epsilon: 0 } };
+
+        const outputSizes = await processPdfInWorker(page, pdfData, config);
+
+        // Calculations:
+        // Content Height = 800 - 20 = 780.
+        // Base Height = 780 + 0 = 780.
+        // Base Width = 780 * 1.0 = 780.
+        // Content Width = 500 - 20 = 480.
+        // Excess Width = 780 - 480 = 300.
+        // Bezel Padding = Max(0, 300 * 0.05) = 15.
+        // Original L = 10. New L = 10 - 15 = -5.
+        expect(Math.abs(outputSizes[0].x - (-5))).toBeLessThan(2.5);
     });
 
     test('XObject Handling: Should detect content inside Form XObjects', async ({ page }) => {
